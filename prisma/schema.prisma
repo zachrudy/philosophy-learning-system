@@ -1,0 +1,183 @@
+// This is your Prisma schema file adapted for SQLite
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// User model
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("STUDENT") // Instead of enum
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  progress    Progress[]
+  reflections Reflection[]
+
+  @@map("users")
+}
+
+// Constants for role (replacing enum)
+// Note: These will be defined in your application code
+// const USER_ROLES = {
+//   ADMIN: "ADMIN",
+//   INSTRUCTOR: "INSTRUCTOR",
+//   STUDENT: "STUDENT"
+// }
+
+// Concept model
+model Concept {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  prerequisites    ConceptPrerequisite[] @relation("prerequisite")
+  dependentConcepts ConceptPrerequisite[] @relation("dependent")
+  lectures         Lecture[]
+  reflectionPrompts ReflectionPrompt[]
+
+  @@map("concepts")
+}
+
+// ConceptPrerequisite relationship model
+model ConceptPrerequisite {
+  id                 String  @id @default(cuid())
+  prerequisiteId     String
+  dependentConceptId String
+  strength           Int     @default(1) // 1-5 scale of importance
+
+  // Relations
+  prerequisite     Concept @relation("prerequisite", fields: [prerequisiteId], references: [id])
+  dependentConcept Concept @relation("dependent", fields: [dependentConceptId], references: [id])
+
+  @@unique([prerequisiteId, dependentConceptId])
+  @@map("concept_prerequisites")
+}
+
+// Lecture model
+model Lecture {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  videoUrl    String
+  duration    Int      // Duration in seconds
+  order       Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  concepts     Concept[]
+  watchPoints  WatchPoint[]
+  reflections  Reflection[]
+
+  @@map("lectures")
+}
+
+// WatchPoint model (guided viewing points within lectures)
+model WatchPoint {
+  id          String   @id @default(cuid())
+  lectureId   String
+  timeInSec   Int
+  description String
+  prompt      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  lecture     Lecture   @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@map("watch_points")
+}
+
+// User Progress model
+model Progress {
+  id          String    @id @default(cuid())
+  userId      String
+  conceptId   String?
+  lectureId   String?
+  status      String    @default("NOT_STARTED") // Instead of enum
+  lastViewed  DateTime?
+  completedAt DateTime?
+  decayFactor Float     @default(1.0) // Knowledge decay factor
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lectureId])
+  @@map("progress")
+}
+
+// Constants for status (replacing enum)
+// Note: These will be defined in your application code
+// const PROGRESS_STATUS = {
+//   NOT_STARTED: "NOT_STARTED",
+//   IN_PROGRESS: "IN_PROGRESS",
+//   READY_FOR_REFLECTION: "READY_FOR_REFLECTION",
+//   REFLECTION_SUBMITTED: "REFLECTION_SUBMITTED",
+//   MASTERY_DEMONSTRATED: "MASTERY_DEMONSTRATED",
+//   COMPLETED: "COMPLETED"
+// }
+
+// Reflection model
+model Reflection {
+  id            String   @id @default(cuid())
+  userId        String
+  lectureId     String
+  promptId      String
+  content       String   // Removed @db.Text
+  aiEvaluation  String?  // Using String instead of Json, will store serialized JSON
+  score         Float?   // Optional scoring
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture   Lecture          @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  prompt    ReflectionPrompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@map("reflections")
+}
+
+// ReflectionPrompt model
+model ReflectionPrompt {
+  id          String   @id @default(cuid())
+  conceptId   String
+  promptText  String
+  promptType  String   // Instead of enum
+  difficulty  Int      @default(1) // 1-5 scale
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  concept     Concept     @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  reflections Reflection[]
+
+  @@map("reflection_prompts")
+}
+
+// Constants for prompt types (replacing enum)
+// Note: These will be defined in your application code
+// const PROMPT_TYPES = {
+//   UNDERSTANDING: "UNDERSTANDING",
+//   APPLICATION: "APPLICATION",
+//   ANALYSIS: "ANALYSIS",
+//   SYNTHESIS: "SYNTHESIS",
+//   EVALUATION: "EVALUATION"
+// }
