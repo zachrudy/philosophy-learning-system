@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { USER_ROLES } from '@/lib/constants';
+import { hashPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +12,23 @@ export async function POST(request: NextRequest) {
     if (!name || !email || !password) {
       return NextResponse.json(
         { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: 'Invalid email format' },
+        { status: 400 }
+      );
+    }
+
+    // Password strength validation
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: 'Password must be at least 8 characters long' },
         { status: 400 }
       );
     }
@@ -27,15 +45,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // In a real app, you'd hash the password using bcrypt
-    // For example: const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash the password
+    const hashedPassword = await hashPassword(password);
 
     // Create the user
     const user = await prisma.user.create({
       data: {
         name,
         email,
-        password, // In production, use hashedPassword
+        password: hashedPassword,
         role: USER_ROLES.STUDENT, // Default role is student
       },
     });
