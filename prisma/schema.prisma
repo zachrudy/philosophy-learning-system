@@ -37,38 +37,119 @@ model User {
 //   STUDENT: "STUDENT"
 // }
 
-// Concept model
-model Concept {
+// prisma/schema.prisma (Additions for Philosophical Entity Model)
+
+// These enums represent the different types of relationships between philosophical entities
+enum RelationType {
+  HIERARCHICAL           // prerequisite/dependent relationship
+  HISTORICAL_INFLUENCE   // one entity influenced another historically
+  LOGICAL_CONNECTION     // conceptual connection between entities
+  ADDRESSES_PROBLEMATIC  // entity addresses a philosophical problem
+  BELONGS_TO             // categorization relationship
+  TEMPORAL_SUCCESSION    // chronological relationship
+  CONTRADICTION          // entities in logical opposition
+  DEVELOPMENT            // one entity develops or extends another
+}
+
+// Base model for all philosophical entities
+model PhilosophicalEntity {
   id          String   @id @default(cuid())
+  type        String   // Discriminator field: "Philosopher", "PhilosophicalConcept", "Branch", "Movement", "Problematic", "Era"
   name        String
   description String
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Type-specific fields (using JSON for flexibility in SQLite)
+  // For Philosopher
+  birthplace  String?
+  nationality String?
+  biography   String?
+
+  // For PhilosophicalConcept
+  primaryText String?
+  keyTerms    String? // Stored as JSON string: ["term1", "term2"]
+
+  // For Problematic
+  centralQuestion String?
+  stillRelevant   Boolean? @default(true)
+
+  // For Branch
+  scope String?
+
+  // For Movement
+  geographicalFocus String?
+  historicalContext String?
+
+  // Relationships
+  sourceRelations PhilosophicalRelation[] @relation("sourceEntity")
+  targetRelations PhilosophicalRelation[] @relation("targetEntity")
+
+  // Many-to-many relationship with lectures (for PhilosophicalConcept)
+  lectures         Lecture[]
+  reflectionPrompts ReflectionPrompt[]
+
+  @@map("philosophical_entities")
+}
+
+// Model for relationships between philosophical entities
+model PhilosophicalRelation {
+  id             String   @id @default(cuid())
+  sourceEntityId String
+  targetEntityId String
+  relationTypes  RelationType[] // Array of relation types
+  description    String?
+  importance     Int      @default(3) // 1-5 scale
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  sourceEntity PhilosophicalEntity @relation("sourceEntity", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntity PhilosophicalEntity @relation("targetEntity", fields: [targetEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceEntityId, targetEntityId, description])
+  @@map("philosophical_relations")
+}
+
+// Keep existing models like Lecture and ReflectionPrompt, but update their relations
+
+// Update Lecture model to reference PhilosophicalEntity
+model Lecture {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  videoUrl    String
+  duration    Int      // Duration in seconds
+  order       Int
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
-  prerequisites    ConceptPrerequisite[] @relation("prerequisite")
-  dependentConcepts ConceptPrerequisite[] @relation("dependent")
-  lectures         Lecture[]
-  reflectionPrompts ReflectionPrompt[]
+  concepts     PhilosophicalEntity[] // Updated relation to PhilosophicalEntity
+  watchPoints  WatchPoint[]
+  reflections  Reflection[]
 
-  @@map("concepts")
+  @@map("lectures")
 }
 
-// ConceptPrerequisite relationship model
-model ConceptPrerequisite {
-  id                 String  @id @default(cuid())
-  prerequisiteId     String
-  dependentConceptId String
-  strength           Int     @default(1) // 1-5 scale of importance
+// Update ReflectionPrompt model to reference PhilosophicalEntity
+model ReflectionPrompt {
+  id          String   @id @default(cuid())
+  conceptId   String
+  promptText  String
+  promptType  String   // Instead of enum
+  difficulty  Int      @default(1) // 1-5 scale
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  prerequisite     Concept @relation("prerequisite", fields: [prerequisiteId], references: [id])
-  dependentConcept Concept @relation("dependent", fields: [dependentConceptId], references: [id])
+  concept     PhilosophicalEntity @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  reflections Reflection[]
 
-  @@unique([prerequisiteId, dependentConceptId])
-  @@map("concept_prerequisites")
+  @@map("reflection_prompts")
 }
-
 // Lecture model
 model Lecture {
   id          String   @id @default(cuid())
