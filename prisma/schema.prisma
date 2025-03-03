@@ -29,27 +29,7 @@ model User {
   @@map("users")
 }
 
-// Constants for role (replacing enum)
-// Note: These will be defined in your application code
-// const USER_ROLES = {
-//   ADMIN: "ADMIN",
-//   INSTRUCTOR: "INSTRUCTOR",
-//   STUDENT: "STUDENT"
-// }
-
-// prisma/schema.prisma (Additions for Philosophical Entity Model)
-
-// These enums represent the different types of relationships between philosophical entities
-enum RelationType {
-  HIERARCHICAL           // prerequisite/dependent relationship
-  HISTORICAL_INFLUENCE   // one entity influenced another historically
-  LOGICAL_CONNECTION     // conceptual connection between entities
-  ADDRESSES_PROBLEMATIC  // entity addresses a philosophical problem
-  BELONGS_TO             // categorization relationship
-  TEMPORAL_SUCCESSION    // chronological relationship
-  CONTRADICTION          // entities in logical opposition
-  DEVELOPMENT            // one entity develops or extends another
-}
+// Note: We removed the RelationType enum and will use string constants instead
 
 // Base model for all philosophical entities
 model PhilosophicalEntity {
@@ -87,7 +67,7 @@ model PhilosophicalEntity {
   sourceRelations PhilosophicalRelation[] @relation("sourceEntity")
   targetRelations PhilosophicalRelation[] @relation("targetEntity")
 
-  // Many-to-many relationship with lectures (for PhilosophicalConcept)
+  // Many-to-many relationship with lectures
   lectures         Lecture[]
   reflectionPrompts ReflectionPrompt[]
 
@@ -99,7 +79,7 @@ model PhilosophicalRelation {
   id             String   @id @default(cuid())
   sourceEntityId String
   targetEntityId String
-  relationTypes  RelationType[] // Array of relation types
+  relationTypes  String   // Stored as JSON string of relation types
   description    String?
   importance     Int      @default(3) // 1-5 scale
   createdAt      DateTime @default(now())
@@ -113,84 +93,63 @@ model PhilosophicalRelation {
   @@map("philosophical_relations")
 }
 
-// Keep existing models like Lecture and ReflectionPrompt, but update their relations
-
-// Update Lecture model to reference PhilosophicalEntity
+// Enhanced Lecture model
 model Lecture {
-  id          String   @id @default(cuid())
-  title       String
-  description String
-  videoUrl    String
-  duration    Int      // Duration in seconds
-  order       Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String     @id @default(cuid())
+  title             String
+  description       String
+  contentUrl        String     // Changed from videoUrl to be more generic
+  lecturerName      String     // Michael Sugrue, Dr. Staloff, etc.
+  contentType       String     // "video", "podcast", etc.
+  category          String     // "introductions", "jerusalem", etc.
+  order             Int        // Order within its category
+  embedAllowed      Boolean    @default(true)
+  sourceAttribution String     // Citation or credit information
 
-  // Relations
-  concepts     PhilosophicalEntity[] // Updated relation to PhilosophicalEntity
-  watchPoints  WatchPoint[]
-  reflections  Reflection[]
+  // Reflection prompts - specific to this lecture
+  initialPrompt     String     // Prime students before watching
+  masteryPrompt     String     // Deeper reflection after watching
+  evaluationPrompt  String     // Instructions for AI evaluation
+
+  // Relationships with philosophical entities
+  entities          PhilosophicalEntity[]
+
+  // Direct prerequisite relationships
+  prerequisiteFor   LecturePrerequisite[] @relation("PrerequisiteFor")
+  prerequisites     LecturePrerequisite[] @relation("HasPrerequisite")
+
+  // User progress/reflections (referenced from other models)
+  progress          Progress[]
+  reflections       Reflection[]
+
+  // Default timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@map("lectures")
 }
 
-// Update ReflectionPrompt model to reference PhilosophicalEntity
-model ReflectionPrompt {
-  id          String   @id @default(cuid())
-  conceptId   String
-  promptText  String
-  promptType  String   // Instead of enum
-  difficulty  Int      @default(1) // 1-5 scale
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// New model for lecture prerequisites
+model LecturePrerequisite {
+  id                    String   @id @default(cuid())
+  lectureId             String
+  prerequisiteLectureId String
+  isRequired            Boolean  @default(true)  // Required vs. recommended
+  importanceLevel       Int      @default(3)     // 1-5 scale of importance
 
   // Relations
-  concept     PhilosophicalEntity @relation(fields: [conceptId], references: [id], onDelete: Cascade)
-  reflections Reflection[]
+  lecture               Lecture  @relation("HasPrerequisite", fields: [lectureId], references: [id])
+  prerequisiteLecture   Lecture  @relation("PrerequisiteFor", fields: [prerequisiteLectureId], references: [id])
 
-  @@map("reflection_prompts")
-}
-// Lecture model
-model Lecture {
-  id          String   @id @default(cuid())
-  title       String
-  description String
-  videoUrl    String
-  duration    Int      // Duration in seconds
-  order       Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  concepts     Concept[]
-  watchPoints  WatchPoint[]
-  reflections  Reflection[]
-
-  @@map("lectures")
-}
-
-// WatchPoint model (guided viewing points within lectures)
-model WatchPoint {
-  id          String   @id @default(cuid())
-  lectureId   String
-  timeInSec   Int
-  description String
-  prompt      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  lecture     Lecture   @relation(fields: [lectureId], references: [id], onDelete: Cascade)
-
-  @@map("watch_points")
+  @@unique([lectureId, prerequisiteLectureId])
+  @@map("lecture_prerequisites")
 }
 
 // User Progress model
 model Progress {
   id          String    @id @default(cuid())
   userId      String
-  conceptId   String?
-  lectureId   String?
+  lectureId   String
   status      String    @default("NOT_STARTED") // Instead of enum
   lastViewed  DateTime?
   completedAt DateTime?
@@ -200,21 +159,11 @@ model Progress {
 
   // Relations
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture    Lecture   @relation(fields: [lectureId], references: [id])
 
   @@unique([userId, lectureId])
   @@map("progress")
 }
-
-// Constants for status (replacing enum)
-// Note: These will be defined in your application code
-// const PROGRESS_STATUS = {
-//   NOT_STARTED: "NOT_STARTED",
-//   IN_PROGRESS: "IN_PROGRESS",
-//   READY_FOR_REFLECTION: "READY_FOR_REFLECTION",
-//   REFLECTION_SUBMITTED: "REFLECTION_SUBMITTED",
-//   MASTERY_DEMONSTRATED: "MASTERY_DEMONSTRATED",
-//   COMPLETED: "COMPLETED"
-// }
 
 // Reflection model
 model Reflection {
@@ -247,18 +196,8 @@ model ReflectionPrompt {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  concept     Concept     @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  concept     PhilosophicalEntity @relation(fields: [conceptId], references: [id], onDelete: Cascade)
   reflections Reflection[]
 
   @@map("reflection_prompts")
 }
-
-// Constants for prompt types (replacing enum)
-// Note: These will be defined in your application code
-// const PROMPT_TYPES = {
-//   UNDERSTANDING: "UNDERSTANDING",
-//   APPLICATION: "APPLICATION",
-//   ANALYSIS: "ANALYSIS",
-//   SYNTHESIS: "SYNTHESIS",
-//   EVALUATION: "EVALUATION"
-// }
