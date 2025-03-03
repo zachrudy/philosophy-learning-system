@@ -39,7 +39,7 @@ export async function createTestUser(page: Page, userData: { name: string, email
   await page.getByRole('button', { name: /sign up/i }).click();
 
   // Wait for navigation to dashboard
-  await page.waitForURL(/\/dashboard/);
+  await page.waitForURL(/\/dashboard/, { timeout: 10000 });
 }
 
 /**
@@ -56,8 +56,8 @@ export async function loginUser(page: Page, userData: { email: string, password:
   // Submit form
   await page.getByRole('button', { name: /sign in/i }).click();
 
-  // Wait for navigation to complete
-  await page.waitForURL(/\/dashboard/);
+  // Wait for navigation to complete - with longer timeout for auth processing
+  await page.waitForURL(/\/dashboard/, { timeout: 10000 });
 
   // Save auth state for future use if requested
   if (saveAuthState) {
@@ -78,17 +78,23 @@ export async function loginUser(page: Page, userData: { email: string, password:
  * Logout the current user
  */
 export async function logoutUser(page: Page) {
-  // Click on the user menu
-  await page.getByRole('button', { name: /user menu/i }).click();
+  // Get the user's initials from the profile menu
+  const profileButton = page.locator('div.rounded-full');
+  await profileButton.waitFor({ state: 'visible', timeout: 5000 });
+  await profileButton.click();
+
+  // Wait for menu to appear
+  await page.waitForSelector('text=Sign out', { timeout: 5000 });
 
   // Click sign out button
-  await page.getByRole('menuitem', { name: /sign out/i }).click();
+  await page.getByText('Sign out').click();
 
   // Confirm sign out
+  await page.waitForSelector('text=Are you sure you want to sign out?', { timeout: 5000 });
   await page.getByRole('button', { name: /yes, sign me out/i }).click();
 
   // Wait for redirect to home page
-  await page.waitForURL(/\/$/);
+  await page.waitForURL(/\/$/, { timeout: 5000 });
 }
 
 /**
@@ -98,5 +104,36 @@ export function clearAuthState() {
   const authStatePath = path.join(process.cwd(), 'e2e/.auth/user.json');
   if (fs.existsSync(authStatePath)) {
     fs.unlinkSync(authStatePath);
+  }
+}
+
+/**
+ * Setup standard test users for e2e tests
+ * This can be called from globalSetup to ensure test users exist
+ */
+export async function setupTestUsers() {
+  try {
+    // Dynamically import the createTestUser utility
+    const { createTestUser } = await import('../../src/lib/test-utils');
+
+    // Create admin user
+    await createTestUser({
+      name: TEST_USERS.ADMIN.name,
+      email: TEST_USERS.ADMIN.email,
+      password: TEST_USERS.ADMIN.password,
+      role: TEST_USERS.ADMIN.role
+    });
+
+    // Create student user
+    await createTestUser({
+      name: TEST_USERS.STUDENT.name,
+      email: TEST_USERS.STUDENT.email,
+      password: TEST_USERS.STUDENT.password,
+      role: TEST_USERS.STUDENT.role
+    });
+
+    console.log('Test users created successfully');
+  } catch (error) {
+    console.error('Error setting up test users:', error);
   }
 }

@@ -2,6 +2,10 @@ import { FullConfig } from '@playwright/test';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
+
+// Use the bridge utility file (will create this in a separate file)
+const testUtils = require('../utils/test-utils');
 
 /**
  * This setup file will run before all tests.
@@ -10,11 +14,37 @@ import path from 'path';
 async function globalSetup(config: FullConfig) {
   console.log('Setting up test environment...');
 
+  // Load appropriate environment variables
+  dotenv.config({ path: path.resolve(process.cwd(), '.env.test') });
+
   // Environment variables for tests
   process.env.NODE_ENV = 'test';
 
   // Create a test database if needed
   setupTestDatabase();
+
+  // Ensure auth directory exists
+  const authDir = path.join(process.cwd(), 'e2e/.auth');
+  if (!fs.existsSync(authDir)) {
+    fs.mkdirSync(authDir, { recursive: true });
+  }
+
+  // Create an empty storage state file if it doesn't exist
+  const storageStatePath = path.join(authDir, 'user.json');
+  if (!fs.existsSync(storageStatePath)) {
+    fs.writeFileSync(storageStatePath, JSON.stringify({
+      cookies: [],
+      origins: []
+    }));
+  }
+
+  // Try to clear test users from previous runs
+  try {
+    await testUtils.clearTestUsers();
+  } catch (error) {
+    console.warn('Could not clear test users:', error);
+    console.warn('This is expected on first run when database is not yet initialized');
+  }
 
   console.log('Test environment setup complete');
 }

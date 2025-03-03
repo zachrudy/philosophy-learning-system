@@ -68,61 +68,116 @@ jest.mock('next/server', () => ({
 }));
 
 // Mock Prisma client
-jest.mock('@/lib/db/prisma', () => ({
-  prisma: {
-    concept: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+jest.mock('@/lib/db/prisma', () => {
+  // Create sample user data for tests
+  const sampleUsers = [
+    {
+      id: 'user1',
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'hashed_password123',
+      role: 'STUDENT',
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
-    lecture: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+    {
+      id: 'admin1',
+      name: 'Admin User',
+      email: 'admin@example.com',
+      password: 'hashed_adminpassword',
+      role: 'ADMIN',
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
-    user: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+  ];
+
+  return {
+    prisma: {
+      user: {
+        findMany: jest.fn().mockResolvedValue(sampleUsers),
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          const user = sampleUsers.find(u => u.email === where.email);
+          return Promise.resolve(user || null);
+        }),
+        create: jest.fn().mockImplementation(({ data }) => {
+          const newUser = {
+            id: `user-${Date.now()}`,
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          sampleUsers.push(newUser);
+          return Promise.resolve(newUser);
+        }),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      // Include other models as needed...
+      concept: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      lecture: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      progress: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      reflection: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      conceptPrerequisite: {
+        create: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      $transaction: jest.fn(callback => callback()),
     },
-    progress: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    },
-    reflection: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    },
-    conceptPrerequisite: {
-      create: jest.fn(),
-      deleteMany: jest.fn(),
-    },
-    $transaction: jest.fn((callback) => callback()),
-  },
-}));
+  };
+});
 
 // Mock next-auth
-jest.mock('next-auth/react', () => ({
-  signIn: jest.fn(),
-  signOut: jest.fn(),
-  useSession: jest.fn().mockReturnValue({
-    data: null,
-    status: 'unauthenticated',
-  }),
-  SessionProvider: ({ children }) => children,
-}));
+jest.mock('next-auth/react', () => {
+  const originalModule = jest.requireActual('next-auth/react');
+
+  return {
+    __esModule: true,
+    ...originalModule,
+    signIn: jest.fn().mockImplementation((provider, options) => {
+      if (options?.email === 'valid@example.com' && options?.password === 'correctpassword') {
+        return Promise.resolve({ ok: true, error: null });
+      }
+      return Promise.resolve({ ok: false, error: 'InvalidCredentials' });
+    }),
+    signOut: jest.fn().mockResolvedValue({ url: '/' }),
+    useSession: jest.fn().mockReturnValue({
+      data: {
+        user: {
+          id: 'user-id',
+          name: 'Test User',
+          email: 'test@example.com',
+          role: 'STUDENT',
+        },
+      },
+      status: 'authenticated',
+    }),
+    SessionProvider: ({ children }) => children,
+  };
+});
 
 // Mock next-auth/jwt
 jest.mock('next-auth/jwt', () => ({

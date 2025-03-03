@@ -1,49 +1,20 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prisma } from '@/lib/db/prisma';
 
-// Create mock functions first
+// Create mock function for verifyPassword
 const mockVerifyPassword = jest.fn();
-const mockHashPassword = jest.fn();
 
-// Mocking dependencies
+// Mock auth utilities properly
 jest.mock('@/lib/auth', () => ({
   verifyPassword: mockVerifyPassword,
-  hashPassword: mockHashPassword,
+  hashPassword: jest.fn(),
   AUTH_ERRORS: {
     INVALID_CREDENTIALS: 'Invalid email or password',
   },
 }));
 
-jest.mock('@/lib/db/prisma', () => ({
-  prisma: {
-    user: {
-      findUnique: jest.fn(),
-    },
-  },
-}));
-
-// Use let instead of const so it can be reassigned
-let mockAuthorizeFn = jest.fn();
-
-// Mock the NextAuth module
-jest.mock('next-auth', () => ({
-  default: jest.fn(() => ({
-    GET: jest.fn(),
-    POST: jest.fn()
-  })),
-}));
-
-jest.mock('next-auth/providers/credentials', () => {
-  return function CredentialsProvider(options) {
-    // Save the authorize function for testing
-    mockAuthorizeFn = options.authorize;
-    return { id: 'credentials', ...options };
-  };
-});
-
-// Manually create a simplified version of the NextAuth handler to test
-const setupNextAuthHandler = () => {
-  // Create a simplified version of the authorize function for testing
+describe('NextAuth Configuration', () => {
+  // Define a test authorize function that mimics NextAuth's behavior
   const testAuthorize = async (credentials) => {
     if (!credentials?.email || !credentials?.password) {
       return null;
@@ -71,21 +42,13 @@ const setupNextAuthHandler = () => {
     };
   };
 
-  return { authorize: testAuthorize };
-};
-
-describe('NextAuth Configuration', () => {
-  let authorize;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    const handler = setupNextAuthHandler();
-    authorize = handler.authorize;
   });
 
   it('should return null when credentials are missing', async () => {
     // Arrange & Act
-    const result = await authorize({});
+    const result = await testAuthorize({});
 
     // Assert
     expect(result).toBeNull();
@@ -100,10 +63,10 @@ describe('NextAuth Configuration', () => {
       password: 'password123',
     };
 
-    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.findUnique.mockResolvedValueOnce(null);
 
     // Act
-    const result = await authorize(credentials);
+    const result = await testAuthorize(credentials);
 
     // Assert
     expect(result).toBeNull();
@@ -128,11 +91,11 @@ describe('NextAuth Configuration', () => {
       role: 'STUDENT',
     };
 
-    prisma.user.findUnique.mockResolvedValue(user);
-    mockVerifyPassword.mockResolvedValue(false);
+    prisma.user.findUnique.mockResolvedValueOnce(user);
+    mockVerifyPassword.mockResolvedValueOnce(false);
 
     // Act
-    const result = await authorize(credentials);
+    const result = await testAuthorize(credentials);
 
     // Assert
     expect(result).toBeNull();
@@ -157,11 +120,11 @@ describe('NextAuth Configuration', () => {
       role: 'STUDENT',
     };
 
-    prisma.user.findUnique.mockResolvedValue(user);
-    mockVerifyPassword.mockResolvedValue(true);
+    prisma.user.findUnique.mockResolvedValueOnce(user);
+    mockVerifyPassword.mockResolvedValueOnce(true);
 
     // Act
-    const result = await authorize(credentials);
+    const result = await testAuthorize(credentials);
 
     // Assert
     expect(result).toEqual({
