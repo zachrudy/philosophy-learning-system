@@ -67,6 +67,20 @@ jest.mock('next/server', () => ({
   },
 }));
 
+// Mock next-auth - this is important to avoid the ESM issues
+jest.mock('next-auth/next', () => ({
+  getServerSession: jest.fn().mockImplementation(() => {
+    return Promise.resolve({
+      user: {
+        id: 'test-user-id',
+        name: 'Test User',
+        email: 'test@example.com',
+        role: 'ADMIN',
+      },
+    });
+  }),
+}));
+
 // Mock Prisma client
 jest.mock('@/lib/db/prisma', () => {
   // Create sample user data for tests
@@ -112,77 +126,26 @@ jest.mock('@/lib/db/prisma', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
-      // Include other models as needed...
-      concept: {
+      // Include mocks for philosophical entities and relationships
+      philosophicalEntity: {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
-      lecture: {
+      philosophicalRelation: {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
-      },
-      progress: {
-        findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-      },
-      reflection: {
-        findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-      },
-      conceptPrerequisite: {
-        create: jest.fn(),
-        deleteMany: jest.fn(),
       },
       $transaction: jest.fn(callback => callback()),
     },
   };
 });
-
-// Mock next-auth
-jest.mock('next-auth/react', () => {
-  const originalModule = jest.requireActual('next-auth/react');
-
-  return {
-    __esModule: true,
-    ...originalModule,
-    signIn: jest.fn().mockImplementation((provider, options) => {
-      if (options?.email === 'valid@example.com' && options?.password === 'correctpassword') {
-        return Promise.resolve({ ok: true, error: null });
-      }
-      return Promise.resolve({ ok: false, error: 'InvalidCredentials' });
-    }),
-    signOut: jest.fn().mockResolvedValue({ url: '/' }),
-    useSession: jest.fn().mockReturnValue({
-      data: {
-        user: {
-          id: 'user-id',
-          name: 'Test User',
-          email: 'test@example.com',
-          role: 'STUDENT',
-        },
-      },
-      status: 'authenticated',
-    }),
-    SessionProvider: ({ children }) => children,
-  };
-});
-
-// Mock next-auth/jwt
-jest.mock('next-auth/jwt', () => ({
-  getToken: jest.fn().mockResolvedValue(null),
-}));
 
 // Global error handling for tests
 const originalConsoleError = console.error;

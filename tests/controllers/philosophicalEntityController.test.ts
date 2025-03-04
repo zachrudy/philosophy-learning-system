@@ -3,7 +3,8 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
 import { prisma } from '@/lib/db/prisma';
-import { RelationType } from '@prisma/client';
+import { RelationType } from '@/lib/constants';
+
 
 // Mocked prisma
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;

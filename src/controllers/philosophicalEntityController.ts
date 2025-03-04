@@ -2,15 +2,82 @@
 
 import { prisma } from '@/lib/db/prisma';
 import { RelationType } from '@prisma/client';
+import { serializeJsonForDb, deserializeJsonFromDb } from '@/lib/constants';
+import {
+  CreatePhilosophicalEntityDTO,
+  CreatePhilosophicalRelationDTO,
+  PhilosophicalEntityWithRelations
+} from '@/types/models';
 
 /**
  * Controller for managing philosophical entities and their relationships
  */
 export class PhilosophicalEntityController {
   /**
+   * Get all philosophical entities with filtering and pagination
+   */
+  static async getAllEntities(options: {
+    type?: string;
+    search?: string;
+    page: number;
+    limit: number;
+  }) {
+    try {
+      const { type, search, page, limit } = options;
+
+      // Build the where clause for filtering
+      const where: any = {};
+
+      if (type) {
+        where.type = type;
+      }
+
+      if (search) {
+        where.OR = [
+          { name: { contains: search } },
+          { description: { contains: search } }
+        ];
+      }
+
+      // Calculate pagination
+      const skip = (page - 1) * limit;
+
+      // Get total count for pagination info
+      const total = await prisma.philosophicalEntity.count({ where });
+
+      // Get paginated entities
+      const entities = await prisma.philosophicalEntity.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          name: 'asc' // Default ordering by name
+        }
+      });
+
+      return {
+        success: true,
+        data: entities,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    } catch (error) {
+      console.error('Error fetching entities:', error);
+      return {
+        success: false,
+        error: `Failed to fetch entities: ${error.message}`
+      };
+    }
+  }
+
+  /**
    * Create a new philosophical entity
    */
-  static async createEntity(data: any) {
+  static async createEntity(data: CreatePhilosophicalEntityDTO) {
     try {
       // Validate entity type
       const validTypes = [
@@ -29,13 +96,23 @@ export class PhilosophicalEntityController {
         };
       }
 
+      // Handle array fields that need to be serialized for storage
+      const processedData = { ...data };
+
+      // Serialize keyTerms array if provided
+      if (Array.isArray(processedData.keyTerms)) {
+        processedData.keyTerms = serializeJsonForDb(processedData.keyTerms);
+      }
+
+      // Sanitize input data to prevent XSS
+      const sanitizedData = this.sanitizeEntityData(processedData);
+
       // Create the entity
       const entity = await prisma.philosophicalEntity.create({
-        data: {
-          ...data
-        }
+        data: sanitizedData
       });
 
+      // Return the created entity
       return {
         success: true,
         data: entity
@@ -54,6 +131,13 @@ export class PhilosophicalEntityController {
    */
   static async getEntityById(id: string) {
     try {
+      if (!id) {
+        return {
+          success: false,
+          error: 'Invalid entity ID'
+        };
+      }
+
       const entity = await prisma.philosophicalEntity.findUnique({
         where: { id },
         include: {
@@ -77,14 +161,17 @@ export class PhilosophicalEntityController {
         };
       }
 
+      // Deserialize JSON fields
+      const deserializedEntity = this.deserializeEntityData(entity);
+
       // Transform the data to include all relationships in a single array
       const relationships = [
-        ...entity.sourceRelations.map(r => ({
+        ...deserializedEntity.sourceRelations.map(r => ({
           ...r,
           direction: 'outgoing',
           relatedEntity: r.targetEntity
         })),
-        ...entity.targetRelations.map(r => ({
+        ...deserializedEntity.targetRelations.map(r => ({
           ...r,
           direction: 'incoming',
           relatedEntity: r.sourceEntity
@@ -92,7 +179,7 @@ export class PhilosophicalEntityController {
       ];
 
       // Remove the separate relations arrays to clean up the response
-      const { sourceRelations, targetRelations, ...entityData } = entity;
+      const { sourceRelations, targetRelations, ...entityData } = deserializedEntity;
 
       return {
         success: true,
@@ -113,16 +200,43 @@ export class PhilosophicalEntityController {
   /**
    * Update an existing entity
    */
-  static async updateEntity(id: string, data: any) {
+  static async updateEntity(id: string, data: Partial<CreatePhilosophicalEntityDTO>) {
     try {
+      // Process data for update
+      const processedData = { ...data };
+
+      // Serialize keyTerms array if provided
+      if (Array.isArray(processedData.keyTerms)) {
+        processedData.keyTerms = serializeJsonForDb(processedData.keyTerms);
+      }
+
+      // Sanitize input data to prevent XSS
+      const sanitizedData = this.sanitizeEntityData(processedData);
+
+      // Validate if entity exists
+      const existingEntity = await prisma.philosophicalEntity.findUnique({
+        where: { id }
+      });
+
+      if (!existingEntity) {
+        return {
+          success: false,
+          error: 'Entity not found'
+        };
+      }
+
+      // Update the entity
       const entity = await prisma.philosophicalEntity.update({
         where: { id },
-        data
+        data: sanitizedData
       });
+
+      // Deserialize JSON fields for response
+      const deserializedEntity = this.deserializeEntityData(entity);
 
       return {
         success: true,
-        data: entity
+        data: deserializedEntity
       };
     } catch (error) {
       console.error('Error updating entity:', error);
@@ -138,6 +252,19 @@ export class PhilosophicalEntityController {
    */
   static async deleteEntity(id: string) {
     try {
+      // Check if entity exists
+      const entity = await prisma.philosophicalEntity.findUnique({
+        where: { id }
+      });
+
+      if (!entity) {
+        return {
+          success: false,
+          error: 'Entity not found'
+        };
+      }
+
+      // Delete the entity (relationships will be cascade deleted due to schema setup)
       await prisma.philosophicalEntity.delete({
         where: { id }
       });
@@ -158,13 +285,7 @@ export class PhilosophicalEntityController {
   /**
    * Create a relationship between entities
    */
-  static async createRelationship(data: {
-    sourceEntityId: string;
-    targetEntityId: string;
-    relationTypes: RelationType[];
-    description?: string;
-    importance?: number;
-  }) {
+  static async createRelationship(data: CreatePhilosophicalRelationDTO) {
     try {
       // Validate the relationship
       const validation = await this.validateRelationship(data);
@@ -175,19 +296,29 @@ export class PhilosophicalEntityController {
         };
       }
 
+      // Serialize relationTypes array
+      const relationshipData = {
+        sourceEntityId: data.sourceEntityId,
+        targetEntityId: data.targetEntityId,
+        relationTypes: Array.isArray(data.relationTypes) ? serializeJsonForDb(data.relationTypes) : '[]',
+        description: data.description || '',
+        importance: data.importance || 3
+      };
+
+      // Create the relationship
       const relationship = await prisma.philosophicalRelation.create({
-        data: {
-          sourceEntityId: data.sourceEntityId,
-          targetEntityId: data.targetEntityId,
-          relationTypes: data.relationTypes,
-          description: data.description || '',
-          importance: data.importance || 3
-        }
+        data: relationshipData
       });
+
+      // Deserialize for the response
+      const deserializedRelationship = {
+        ...relationship,
+        relationTypes: deserializeJsonFromDb(relationship.relationTypes)
+      };
 
       return {
         success: true,
-        data: relationship
+        data: deserializedRelationship
       };
     } catch (error) {
       console.error('Error creating relationship:', error);
@@ -199,10 +330,136 @@ export class PhilosophicalEntityController {
   }
 
   /**
+   * Update a relationship between entities
+   */
+  static async updateRelationship(id: string, data: {
+    description?: string;
+    importance?: number;
+    relationTypes?: RelationType[];
+  }) {
+    try {
+      // Check if the relationship exists
+      const currentRelationship = await prisma.philosophicalRelation.findUnique({
+        where: { id }
+      });
+
+      if (!currentRelationship) {
+        return {
+          success: false,
+          error: 'Relationship not found'
+        };
+      }
+
+      // Process data for update
+      const updateData: any = {};
+
+      if (data.description !== undefined) {
+        updateData.description = data.description;
+      }
+
+      if (data.importance !== undefined) {
+        updateData.importance = data.importance;
+      }
+
+      // Validate and serialize relationTypes if provided
+      if (data.relationTypes) {
+        // Prepare validation data
+        const validationData = {
+          sourceEntityId: currentRelationship.sourceEntityId,
+          targetEntityId: currentRelationship.targetEntityId,
+          relationTypes: data.relationTypes
+        };
+
+        // Validate the updated relationship
+        const validation = await this.validateRelationship(validationData);
+        if (!validation.valid) {
+          return {
+            success: false,
+            error: `Invalid relationship update: ${validation.errors.join(', ')}`
+          };
+        }
+
+        // Serialize relationTypes
+        updateData.relationTypes = serializeJsonForDb(data.relationTypes);
+      }
+
+      // Update the relationship
+      const relationship = await prisma.philosophicalRelation.update({
+        where: { id },
+        data: updateData
+      });
+
+      // Deserialize for the response
+      const deserializedRelationship = {
+        ...relationship,
+        relationTypes: deserializeJsonFromDb(relationship.relationTypes)
+      };
+
+      return {
+        success: true,
+        data: deserializedRelationship
+      };
+    } catch (error) {
+      console.error('Error updating relationship:', error);
+      return {
+        success: false,
+        error: `Failed to update relationship: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Delete a relationship
+   */
+  static async deleteRelationship(id: string) {
+    try {
+      // Check if relationship exists
+      const relationship = await prisma.philosophicalRelation.findUnique({
+        where: { id }
+      });
+
+      if (!relationship) {
+        return {
+          success: false,
+          error: 'Relationship not found'
+        };
+      }
+
+      // Delete the relationship
+      await prisma.philosophicalRelation.delete({
+        where: { id }
+      });
+
+      return {
+        success: true,
+        message: 'Relationship deleted successfully'
+      };
+    } catch (error) {
+      console.error('Error deleting relationship:', error);
+      return {
+        success: false,
+        error: `Failed to delete relationship: ${error.message}`
+      };
+    }
+  }
+
+  /**
    * Get all relationships for an entity
    */
   static async getRelationshipsByEntityId(entityId: string) {
     try {
+      // Check if entity exists
+      const entity = await prisma.philosophicalEntity.findUnique({
+        where: { id: entityId }
+      });
+
+      if (!entity) {
+        return {
+          success: false,
+          error: 'Entity not found'
+        };
+      }
+
       // Get relationships where the entity is the source
       const sourceRelations = await prisma.philosophicalRelation.findMany({
         where: {
@@ -223,15 +480,17 @@ export class PhilosophicalEntityController {
         }
       });
 
-      // Combine and transform the relationships
+      // Deserialize relationTypes and combine into a single array
       const relationships = [
         ...sourceRelations.map(r => ({
           ...r,
+          relationTypes: deserializeJsonFromDb(r.relationTypes),
           direction: 'outgoing',
           relatedEntity: r.targetEntity
         })),
         ...targetRelations.map(r => ({
           ...r,
+          relationTypes: deserializeJsonFromDb(r.relationTypes),
           direction: 'incoming',
           relatedEntity: r.sourceEntity
         }))
@@ -259,6 +518,12 @@ export class PhilosophicalEntityController {
     relationTypes: RelationType[];
   }) {
     const errors = [];
+
+    // Check for missing relation types
+    if (!data.relationTypes || !Array.isArray(data.relationTypes) || data.relationTypes.length === 0) {
+      errors.push('At least one relation type is required');
+      return { valid: false, errors };
+    }
 
     // Ensure entities exist
     const sourceEntity = await prisma.philosophicalEntity.findUnique({
@@ -327,7 +592,7 @@ export class PhilosophicalEntityController {
         where: {
           targetEntityId: conceptId,
           relationTypes: {
-            hasSome: [RelationType.HIERARCHICAL]
+            contains: serializeJsonForDb([RelationType.HIERARCHICAL])
           }
         },
         include: {
@@ -335,7 +600,12 @@ export class PhilosophicalEntityController {
         }
       });
 
-      const prerequisites = relations.map(r => r.sourceEntity);
+      // Deserialize for the response
+      const prerequisites = relations.map(r => ({
+        ...r.sourceEntity,
+        // Deserialize any JSON fields as needed
+        keyTerms: deserializeJsonFromDb(r.sourceEntity.keyTerms)
+      }));
 
       return {
         success: true,
@@ -393,7 +663,7 @@ export class PhilosophicalEntityController {
           where: {
             targetEntityId: conceptId,
             relationTypes: {
-              hasSome: [RelationType.HIERARCHICAL]
+              contains: serializeJsonForDb([RelationType.HIERARCHICAL])
             }
           },
           include: {
@@ -452,7 +722,9 @@ export class PhilosophicalEntityController {
           where: { id }
         });
         if (concept) {
-          concepts.push(concept);
+          // Deserialize JSON fields
+          const deserializedConcept = this.deserializeEntityData(concept);
+          concepts.push(deserializedConcept);
         }
       }
 
@@ -467,5 +739,57 @@ export class PhilosophicalEntityController {
         error: `Failed to create learning path: ${error.message}`
       };
     }
+  }
+
+  /**
+   * Sanitize entity data to prevent XSS
+   * Private helper method
+   */
+  private static sanitizeEntityData(data: any): any {
+    const sanitized = { ...data };
+
+    // Basic XSS protection - replace script tags
+    if (typeof sanitized.name === 'string') {
+      sanitized.name = sanitized.name.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    }
+
+    if (typeof sanitized.description === 'string') {
+      sanitized.description = sanitized.description.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    }
+
+    // Add more sanitization as needed for other fields
+
+    return sanitized;
+  }
+
+  /**
+   * Deserialize JSON fields from entity data
+   * Private helper method
+   */
+  private static deserializeEntityData(entity: any): any {
+    // Create a copy to avoid modifying the original
+    const deserialized = { ...entity };
+
+    // Deserialize keyTerms if it exists
+    if (deserialized.keyTerms) {
+      deserialized.keyTerms = deserializeJsonFromDb(deserialized.keyTerms);
+    }
+
+    // Handle sourceRelations and targetRelations if they exist
+    if (Array.isArray(deserialized.sourceRelations)) {
+      deserialized.sourceRelations = deserialized.sourceRelations.map(relation => ({
+        ...relation,
+        relationTypes: deserializeJsonFromDb(relation.relationTypes)
+      }));
+    }
+
+    if (Array.isArray(deserialized.targetRelations)) {
+      deserialized.targetRelations = deserialized.targetRelations.map(relation => ({
+        ...relation,
+        relationTypes: deserializeJsonFromDb(relation.relationTypes)
+      }));
+    }
+
+    return deserialized;
   }
 }

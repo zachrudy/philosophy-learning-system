@@ -29,7 +29,6 @@ const customJestConfig = {
     '!**/node_modules/**',
   ],
   // Temporarily disable coverage thresholds to get tests running
-  // You can gradually increase these as you add more tests
   coverageThreshold: {
     global: {
       branches: 0,
@@ -37,6 +36,17 @@ const customJestConfig = {
       lines: 0,
       statements: 0,
     },
+  },
+  // Add transformIgnorePatterns to process ESM modules in node_modules
+  transformIgnorePatterns: [
+    // The default pattern excludes all node_modules
+    // We're modifying it to transform specific ESM-based packages
+    '/node_modules/(?!(next-auth|@next-auth|jose|openid-client|preact|uuid|@panva)/)',
+  ],
+  // If needed, add a custom transform
+  transform: {
+    // Use babel-jest for JS/TS files
+    '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }]
   },
 };
 

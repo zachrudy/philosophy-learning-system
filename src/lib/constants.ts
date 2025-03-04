@@ -57,14 +57,26 @@ export type OntologicalPosition = keyof typeof ONTOLOGICAL_POSITIONS;
  * Helper function to serialize JSON data for SQLite storage
  */
 export function serializeJsonForDb(data: any): string {
-  return JSON.stringify(data);
+  if (data === undefined || data === null) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(data);
+  } catch (error) {
+    console.error('Error serializing data for DB:', error);
+    return '';
+  }
 }
 
 /**
  * Helper function to deserialize JSON data from SQLite storage
  */
 export function deserializeJsonFromDb<T>(jsonString: string | null): T | null {
-  if (!jsonString) return null;
+  if (!jsonString) {
+    return null;
+  }
+
   try {
     return JSON.parse(jsonString) as T;
   } catch (error) {
@@ -77,14 +89,17 @@ export function deserializeJsonFromDb<T>(jsonString: string | null): T | null {
  * Helper function to handle relationTypes specifically
  */
 export function serializeRelationTypes(types: RelationType[]): string {
-  return JSON.stringify(types);
+  return serializeJsonForDb(types);
 }
 
 /**
  * Helper function to deserialize relationTypes
  */
 export function deserializeRelationTypes(jsonString: string | null): RelationType[] {
-  if (!jsonString) return [];
+  if (!jsonString) {
+    return [];
+  }
+
   try {
     return JSON.parse(jsonString) as RelationType[];
   } catch (error) {
