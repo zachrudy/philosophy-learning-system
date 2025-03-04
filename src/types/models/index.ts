@@ -18,6 +18,9 @@ import {
   RelationType
 } from '@/lib/constants';
 
+import { OntologicalPosition } from '@/lib/constants';
+
+
 // Re-export Prisma types
 export type {
   User,
@@ -121,6 +124,7 @@ export type CreatePhilosophicalEntityDTO = {
   birthplace?: string;
   nationality?: string;
   biography?: string;
+  ontologicalPosition?: OntologicalPosition;
   primaryText?: string;
   keyTerms?: string[];
   centralQuestion?: string;

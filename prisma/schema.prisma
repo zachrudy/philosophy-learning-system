@@ -47,7 +47,8 @@ model PhilosophicalEntity {
   birthplace  String?
   nationality String?
   biography   String?
-
+  ontologicalPosition String?
+  
   // For PhilosophicalConcept
   primaryText String?
   keyTerms    String? // Stored as JSON string: ["term1", "term2"]

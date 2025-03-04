@@ -46,6 +46,13 @@ export const RELATION_TYPES = {
 
 export type RelationType = keyof typeof RELATION_TYPES;
 
+export const ONTOLOGICAL_POSITIONS = {
+  ONE_WORLD: "ONE_WORLD",
+  TWO_WORLD: "TWO_WORLD"
+} as const;
+
+export type OntologicalPosition = keyof typeof ONTOLOGICAL_POSITIONS;
+
 /**
  * Helper function to serialize JSON data for SQLite storage
  */
