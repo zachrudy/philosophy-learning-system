@@ -285,7 +285,7 @@ describe('PhilosophicalEntityController', () => {
     });
   });
 
-  // RELATIONSHIP TESTS
+  // RELATIONSHIP MANAGEMENT TESTS
 
   describe('createRelationship', () => {
     it('should create a relationship between entities successfully', async () => {
@@ -571,11 +571,9 @@ describe('PhilosophicalEntityController', () => {
       expect(names[names.length - 1]).toBe('Advanced Concept');
     });
   });
-});
 
-// tests/controllers/philosophicalRelationController.test.ts
+  // VALIDATION TESTS
 
-describe('PhilosophicalRelationController', () => {
   describe('validateRelationship', () => {
     it('should validate a valid relationship', async () => {
       // Arrange
@@ -732,6 +730,238 @@ describe('PhilosophicalRelationController', () => {
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]).toContain('ADDRESSES_PROBLEMATIC relation requires target to be a Problematic');
+    });
+  });
+
+  // Add these additional tests to your test file, inside the same main describe block
+
+  // EDGE CASE AND ERROR HANDLING TESTS
+
+  describe('edge cases and error handling', () => {
+    it('should handle database connection errors in getEntityById', async () => {
+      // Arrange
+      const entityId = 'concept-123';
+      mockPrisma.philosophicalEntity.findUnique.mockRejectedValue(
+        new Error('Database connection error')
+      );
+
+      // Act
+      const result = await PhilosophicalEntityController.getEntityById(entityId);
+
+      // Assert
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to fetch entity');
+    });
+
+    it('should handle empty or undefined relationTypes array', async () => {
+      // Arrange
+      const relationData = {
+        sourceEntityId: 'philosopher-1',
+        targetEntityId: 'concept-1',
+        relationTypes: [] // Empty array
+      };
+
+      mockPrisma.philosophicalEntity.findUnique.mockImplementation((args) => {
+        if (args.where.id === 'philosopher-1') {
+          return Promise.resolve({
+            id: 'philosopher-1',
+            type: 'Philosopher',
+            name: 'Immanuel Kant'
+          });
+        } else if (args.where.id === 'concept-1') {
+          return Promise.resolve({
+            id: 'concept-1',
+            type: 'PhilosophicalConcept',
+            name: 'Categorical Imperative'
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      // Act
+      const result = await PhilosophicalEntityController.validateRelationship(relationData);
+
+      // Assert
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('At least one relation type is required');
+    });
+
+    it('should sanitize input data before creating an entity', async () => {
+      // Arrange
+      const conceptData = {
+        type: 'PhilosophicalConcept',
+        name: '<script>alert("XSS")</script>Categorical Imperative',
+        description: 'A central concept in Kant\'s ethics',
+      };
+
+      mockPrisma.philosophicalEntity.create.mockImplementation((args) => {
+        return Promise.resolve({
+          id: 'concept-123',
+          ...args.data,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      });
+
+      // Act
+      const result = await PhilosophicalEntityController.createEntity(conceptData);
+
+      // Assert
+      expect(result.success).toBe(true);
+      // Check if name was sanitized (this depends on your implementation)
+      expect(result.data.name).not.toContain('<script>');
+    });
+
+    it('should handle cyclic references in learning path generation', async () => {
+      // Arrange
+      const targetConceptId = 'concept-a';
+
+      // Mock a cyclic dependency: A depends on B, B depends on A
+      mockPrisma.philosophicalRelation.findMany.mockImplementation((args) => {
+        if (args.where.targetEntityId === 'concept-a') {
+          return Promise.resolve([
+            {
+              sourceEntityId: 'concept-b',
+              targetEntityId: 'concept-a',
+              relationTypes: [RelationType.HIERARCHICAL],
+              sourceEntity: {
+                id: 'concept-b',
+                type: 'PhilosophicalConcept',
+                name: 'Concept B'
+              }
+            }
+          ]);
+        } else if (args.where.targetEntityId === 'concept-b') {
+          return Promise.resolve([
+            {
+              sourceEntityId: 'concept-a',
+              targetEntityId: 'concept-b',
+              relationTypes: [RelationType.HIERARCHICAL],
+              sourceEntity: {
+                id: 'concept-a',
+                type: 'PhilosophicalConcept',
+                name: 'Concept A'
+              }
+            }
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      mockPrisma.philosophicalEntity.findUnique.mockImplementation((args) => {
+        const id = args.where.id;
+        const names = {
+          'concept-a': 'Concept A',
+          'concept-b': 'Concept B'
+        };
+
+        if (names[id]) {
+          return Promise.resolve({
+            id,
+            type: 'PhilosophicalConcept',
+            name: names[id],
+            description: 'Description'
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      // Act
+      const result = await PhilosophicalEntityController.getLearningPath(targetConceptId);
+
+      // Assert
+      expect(result.success).toBe(true);
+      // The implementation should handle cyclic dependencies gracefully
+      expect(result.data.length).toBeGreaterThan(0);
+      // Should still include both concepts
+      const names = result.data.map(c => c.name);
+      expect(names).toContain('Concept A');
+      expect(names).toContain('Concept B');
+    });
+
+    it('should handle transaction failures in createRelationship', async () => {
+      // Arrange
+      const relationData = {
+        sourceEntityId: 'philosopher-1',
+        targetEntityId: 'concept-1',
+        relationTypes: [RelationType.DEVELOPMENT],
+        description: 'Kant developed the Categorical Imperative'
+      };
+
+      // Mock the validation method to return valid
+      jest.spyOn(PhilosophicalEntityController, 'validateRelationship').mockResolvedValue({
+        valid: true,
+        errors: []
+      });
+
+      // Mock create to throw a transaction error
+      mockPrisma.philosophicalRelation.create.mockRejectedValue(
+        new Error('Transaction failed: deadlock detected')
+      );
+
+      // Act
+      const result = await PhilosophicalEntityController.createRelationship(relationData);
+
+      // Assert
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to create relationship');
+      expect(result.error).toContain('Transaction failed');
+    });
+
+    it('should return readable error when updating an entity with invalid data', async () => {
+      // Arrange
+      const entityId = 'concept-123';
+      const invalidData = {
+        // For example, trying to set an invalid enum value
+        type: 'InvalidType'
+      };
+
+      mockPrisma.philosophicalEntity.update.mockRejectedValue(
+        new Error('Invalid data: type must be one of the allowed values')
+      );
+
+      // Act
+      const result = await PhilosophicalEntityController.updateEntity(entityId, invalidData);
+
+      // Assert
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to update entity');
+      // The error should be user-friendly
+      expect(result.error).toContain('Invalid data');
+    });
+
+    it('should handle missing entity ID in getEntityById', async () => {
+      // Arrange
+      const entityId = null;
+
+      // Act
+      const result = await PhilosophicalEntityController.getEntityById(entityId);
+
+      // Assert
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid entity ID');
+    });
+
+    it('should handle concurrent modifications gracefully', async () => {
+      // Arrange - simulate a concurrent modification scenario
+      const entityId = 'concept-123';
+      const updateData = {
+        description: 'Updated description'
+      };
+
+      // Mock an error that would occur in case of conflicting updates
+      mockPrisma.philosophicalEntity.update.mockRejectedValue(
+        new Error('Concurrent modification detected')
+      );
+
+      // Act
+      const result = await PhilosophicalEntityController.updateEntity(entityId, updateData);
+
+      // Assert
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to update entity');
+      // The implementation should provide a clear error message
+      expect(result.error).toContain('Concurrent modification');
     });
   });
 });
