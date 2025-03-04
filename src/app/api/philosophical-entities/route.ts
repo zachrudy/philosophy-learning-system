@@ -4,6 +4,7 @@ import { PhilosophicalEntityController } from '@/controllers/philosophicalEntity
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
 
+
 // GET /api/philosophical-entities
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
+    // Return the data and pagination information directly from the controller
     return NextResponse.json({
       data: result.data,
       pagination: result.pagination
