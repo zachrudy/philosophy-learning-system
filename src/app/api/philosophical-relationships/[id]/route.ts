@@ -1,6 +1,6 @@
 // src/app/api/philosophical-relationships/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
+import { PhilosophicalRelationController } from '@/controllers/philosophicalRelationController';
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
 
@@ -58,7 +58,7 @@ export async function PATCH(
     }
 
     // Update the relationship
-    const result = await PhilosophicalEntityController.updateRelationship(id, body);
+    const result = await PhilosophicalRelationController.updateRelationship(id, body);
 
     if (!result.success) {
       return NextResponse.json(
@@ -112,7 +112,7 @@ export async function DELETE(
     }
 
     // Delete the relationship
-    const result = await PhilosophicalEntityController.deleteRelationship(id);
+    const result = await PhilosophicalRelationController.deleteRelationship(id);
 
     if (!result.success) {
       return NextResponse.json(

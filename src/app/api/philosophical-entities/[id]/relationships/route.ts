@@ -1,6 +1,6 @@
 // src/app/api/philosophical-entities/[id]/relationships/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
+import { PhilosophicalRelationController } from '@/controllers/philosophicalRelationController';
 
 // GET /api/philosophical-entities/:id/relationships
 export async function GET(
@@ -18,7 +18,7 @@ export async function GET(
     }
 
     // Get relationships for the entity
-    const result = await PhilosophicalEntityController.getRelationshipsByEntityId(id);
+    const result = await PhilosophicalRelationController.getRelationshipsByEntityId(id);
 
     if (!result.success) {
       return NextResponse.json(

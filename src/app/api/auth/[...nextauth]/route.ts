@@ -2,12 +2,7 @@ import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from '@/lib/db/prisma';
 import { USER_ROLES } from '@/lib/constants';
-
-// For a real app, you'd use proper password hashing
-const verifyPassword = (password: string, hashedPassword: string) => {
-  // This is a placeholder - in a real app, use bcrypt or similar
-  return password === hashedPassword;
-};
+import { verifyPassword } from '@/lib/auth'; // Import the proper function
 
 const handler = NextAuth({
   providers: [
@@ -30,7 +25,7 @@ const handler = NextAuth({
           return null;
         }
 
-        const isValid = verifyPassword(credentials.password, user.password);
+        const isValid = await verifyPassword(credentials.password, user.password);
 
         if (!isValid) {
           return null;

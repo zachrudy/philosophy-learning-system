@@ -1,6 +1,6 @@
 // src/app/api/philosophical-relationships/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
+import { PhilosophicalRelationController } from '@/controllers/philosophicalRelationController';
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
 
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the relationship
-    const result = await PhilosophicalEntityController.createRelationship(body);
+    const result = await PhilosophicalRelationController.createRelationship(body);
 
     if (!result.success) {
       return NextResponse.json(
