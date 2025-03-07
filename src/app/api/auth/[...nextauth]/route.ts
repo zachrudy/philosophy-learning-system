@@ -1,4 +1,4 @@
-// In src/app/api/auth/[...nextauth]/route.ts
+// src/app/api/auth/[...nextauth]/route.ts
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from '@/lib/db/prisma';
@@ -31,7 +31,6 @@ export const authOptions = {
           return null;
         }
 
-        // Return the user with the role explicitly included
         return {
           id: user.id,
           email: user.email,
@@ -43,32 +42,62 @@ export const authOptions = {
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // When signing in, include user data in the token
       if (user) {
         token.id = user.id;
         token.role = user.role;
-        console.log("Added to JWT token:", { id: user.id, role: user.role });
       }
       return token;
     },
     async session({ session, token }) {
-      // Add token info to the session
       if (session.user) {
         session.user.id = token.id;
         session.user.role = token.role;
-        console.log("Added to session:", { id: token.id, role: token.role });
       }
       return session;
     },
   },
   pages: {
     signIn: '/auth/signin',
-    signOut: '/auth/signout',
     error: '/auth/error',
   },
   session: {
     strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
+  // Configure shorter logout cookie removal
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      }
+    },
+    callbackUrl: {
+      name: `next-auth.callback-url`,
+      options: {
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      }
+    },
+    csrfToken: {
+      name: `next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      }
+    },
+  },
+  events: {
+    async signOut() {
+      console.log('User signed out');
+    }
+  }
 };
 
 const handler = NextAuth(authOptions);

@@ -4,6 +4,41 @@ import { PhilosophicalRelationController } from '@/controllers/philosophicalRela
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
 
+// Add this GET handler to src/app/api/philosophical-relationships/[id]/route.ts
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Relationship ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get the relationship by ID
+    const result = await PhilosophicalRelationController.getRelationshipById(id);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error === 'Relationship not found' ? 404 : 500 }
+      );
+    }
+
+    return NextResponse.json(result.data);
+  } catch (error) {
+    console.error('Error in GET /api/philosophical-relationships/[id]:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
 // PATCH /api/philosophical-relationships/:id
 export async function PATCH(
   request: NextRequest,
@@ -20,8 +55,15 @@ export async function PATCH(
       );
     }
 
-    // Check authorization - only admin and instructors can update relationships
-    const userRole = session.user.role;
+    // Add this to fix the problem - look up the role from DB instead of session
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { role: true }
+    });
+
+    // Use the DB role instead of session role
+    const userRole = user?.role;
+
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(
         { error: 'Forbidden - insufficient permissions' },
@@ -93,8 +135,15 @@ export async function DELETE(
       );
     }
 
-    // Check authorization - only admin and instructors can delete relationships
-    const userRole = session.user.role;
+    // Add this to fix the problem - look up the role from DB instead of session
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { role: true }
+    });
+
+    // Use the DB role instead of session role
+    const userRole = user?.role;
+
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(
         { error: 'Forbidden - insufficient permissions' },

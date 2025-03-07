@@ -121,6 +121,9 @@ const EntityForm: React.FC<EntityFormProps> = ({ entityId, initialData }) => {
       // Prepare data for submission
       const dataToSubmit = {
         ...formData,
+        // Convert startYear and endYear to integers or null
+        startYear: formData.startYear ? parseInt(formData.startYear.toString(), 10) : null,
+        endYear: formData.endYear ? parseInt(formData.endYear.toString(), 10) : null,
         keyTerms: keyTerms.length > 0 ? keyTerms : null,
       };
 

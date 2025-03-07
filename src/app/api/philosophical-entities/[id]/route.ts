@@ -72,8 +72,15 @@ export async function PATCH(
       );
     }
 
-    // Check authorization - only admin and instructors can update entities
-    const userRole = session.user.role;
+    // Add this to fix the problem - look up the role from DB instead of session
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { role: true }
+    });
+
+    // Use the DB role instead of session role
+    const userRole = user?.role;
+
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(
         { error: 'Forbidden - insufficient permissions' },
@@ -145,15 +152,22 @@ export async function DELETE(
       );
     }
 
-    // Check authorization - only admins can delete entities
-    const userRole = session.user.role;
-    if (userRole !== USER_ROLES.ADMIN) {
+    // Add this to fix the problem - look up the role from DB instead of session
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { role: true }
+    });
+
+    // Use the DB role instead of session role
+    const userRole = user?.role;
+
+    if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(
-        { error: 'Forbidden - admin access required' },
+        { error: 'Forbidden - insufficient permissions' },
         { status: 403 }
       );
     }
-
+    
     const { id } = params;
 
     if (!id) {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RELATION_TYPES } from '@/lib/constants';
@@ -68,6 +68,7 @@ const RelationshipForm: React.FC<RelationshipFormProps> = ({
   initialData,
   // Default implementations for data fetching and mutation
   fetchEntities = async () => {
+
     const response = await fetch('/api/philosophical-entities');
     if (!response.ok) {
       const errorData = await response.json();
@@ -113,6 +114,11 @@ const RelationshipForm: React.FC<RelationshipFormProps> = ({
     return response.json();
   }
 }) => {
+  const memoizedFetchEntities = useCallback(fetchEntities, []);
+  const memoizedFetchRelationship = useCallback(
+    (id: string) => fetchRelationship(id),
+    []
+  );
   const router = useRouter();
   const [loading, setLoading] = useState<boolean>(false);
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -121,6 +127,7 @@ const RelationshipForm: React.FC<RelationshipFormProps> = ({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<string | null>(null);
   const [formSubmitted, setFormSubmitted] = useState<boolean>(false);
+  const [fetchAttempted, setFetchAttempted] = useState<boolean>(false);
 
   // Form state
   const [formData, setFormData] = useState<Partial<Relationship>>({
@@ -136,45 +143,70 @@ const RelationshipForm: React.FC<RelationshipFormProps> = ({
 
   // Load entities for the select dropdowns
   useEffect(() => {
+    let isActive = true;
+
     const loadEntities = async () => {
       try {
         setEntitiesLoading(true);
-        setError(null);
 
-        const entitiesData = await fetchEntities();
-        setEntities(entitiesData);
+        const entitiesData = await memoizedFetchEntities();
+
+        if (isActive) {
+          setEntities(entitiesData);
+        }
       } catch (err) {
         console.error('Error fetching entities:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load entities');
+        if (isActive) {
+          setError(err instanceof Error ? err.message : 'Failed to load entities');
+        }
       } finally {
-        setEntitiesLoading(false);
+        if (isActive) {
+          setEntitiesLoading(false);
+        }
       }
     };
 
     loadEntities();
-  }, [fetchEntities]);
+
+    return () => {
+      isActive = false;
+    };
+  }, [memoizedFetchEntities]); // Using memoized function prevents recreation
+
 
   // Load relationship data in edit mode
   useEffect(() => {
-    if (isEditMode && !initialData) {
-      const loadRelationship = async () => {
-        try {
-          setLoading(true);
-          setError(null);
+    if (!isEditMode || initialData) return;
 
-          const data = await fetchRelationship(relationshipId);
+    let isActive = true;
+
+    const loadRelationship = async () => {
+      try {
+        setLoading(true);
+
+        const data = await memoizedFetchRelationship(relationshipId);
+
+        if (isActive) {
           setFormData(data);
-        } catch (err) {
-          console.error('Error fetching relationship:', err);
+        }
+      } catch (err) {
+        console.error('Error fetching relationship:', err);
+        if (isActive) {
           setError(err instanceof Error ? err.message : 'An error occurred');
-        } finally {
+        }
+      } finally {
+        if (isActive) {
           setLoading(false);
         }
-      };
+      }
+    };
 
-      loadRelationship();
-    }
-  }, [relationshipId, initialData, isEditMode, fetchRelationship]);
+    loadRelationship();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isEditMode, initialData, relationshipId, memoizedFetchRelationship]);
 
   // Handle form input changes
   const handleInputChange = (
@@ -233,10 +265,10 @@ const RelationshipForm: React.FC<RelationshipFormProps> = ({
         setSuccess('Relationship created successfully');
       }
 
-      // Redirect after short delay
+      // Redirect after short delay - using window.location for hard navigation
+      // This helps prevent issues with router.push
       setTimeout(() => {
-        // Redirect to the source entity detail page
-        router.push(`/admin/philosophical-entities/${formData.sourceEntityId}`);
+        window.location.href = `/admin/philosophical-entities/${formData.sourceEntityId}`;
       }, 1500);
     } catch (err) {
       console.error('Error submitting form:', err);

@@ -11,7 +11,9 @@ export default function SignOut() {
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
-    await signOut({ callbackUrl: '/' });
+    // Use a direct window location change after signout
+    await signOut({ redirect: false });
+    window.location.href = '/';
   };
 
   const handleCancel = () => {

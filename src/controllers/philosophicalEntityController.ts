@@ -108,7 +108,7 @@ export class PhilosophicalEntityController {
       if (typeof processedData.endYear === 'string') {
         processedData.endYear = parseInt(processedData.endYear, 10);
       }
-      
+
       // Serialize keyTerms array if provided
       if (Array.isArray(processedData.keyTerms)) {
         processedData.keyTerms = serializeJsonForDb(processedData.keyTerms);
@@ -219,6 +219,11 @@ export class PhilosophicalEntityController {
       // Process data for update
       const processedData = { ...data };
 
+      // Remove relationships as it's not a field in the Prisma model
+      if ('relationships' in processedData) {
+        delete processedData.relationships;
+      }
+      
       // Serialize keyTerms array if provided
       if (Array.isArray(processedData.keyTerms)) {
         processedData.keyTerms = serializeJsonForDb(processedData.keyTerms);

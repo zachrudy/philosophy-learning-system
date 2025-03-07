@@ -17,8 +17,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check authorization - only admin and instructors can create relationships
-    const userRole = session.user.role;
+    // Get user role directly from database
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { role: true }
+    });
+
+    // Check authorization based on database role
+    const userRole = user?.role;
+    console.log('User role from DB lookup:', userRole);
+
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(
         { error: 'Forbidden - insufficient permissions' },
