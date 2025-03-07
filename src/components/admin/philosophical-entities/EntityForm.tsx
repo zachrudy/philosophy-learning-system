@@ -348,10 +348,17 @@ const EntityForm: React.FC<EntityFormProps> = ({ entityId, initialData }) => {
   if (loading && !formSubmitted && !formData.name) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <div
+          className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"
+          role="status"
+          aria-label="Loading"
+        >
+          <span className="sr-only">Loading...</span>
+        </div>
       </div>
     );
   }
+
 
   return (
     <div className="px-4 py-5 sm:p-6">

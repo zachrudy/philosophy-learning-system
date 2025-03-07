@@ -178,8 +178,11 @@ describe('EntityList Component', () => {
       expect(screen.getByText('Philosophical Entities')).toBeInTheDocument();
     });
 
-    // Find next page button and click it
-    const nextPageButton = await screen.findByRole('button', { name: /next/i });
+    // Get all "next" buttons (mobile and desktop versions)
+    const nextButtons = await screen.findAllByRole('button', { name: /next/i });
+    // Use the mobile version (first in the DOM)
+    const nextPageButton = nextButtons[0];
+
     fireEvent.click(nextPageButton);
 
     // Verify fetch was called with page=2

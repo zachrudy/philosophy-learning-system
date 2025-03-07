@@ -2,23 +2,25 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useRouter } from 'next/navigation';
-import RelationshipForm from '@/components/admin/philosophical-entities/RelationshipForm';
-import { RELATION_TYPES } from '@/lib/constants';
+import RelationshipForm, {
+  validateRequired,
+  validateRelationshipForm,
+  Entity,
+  Relationship
+} from '@/components/admin/philosophical-entities/RelationshipForm';
 
 // Mock next/navigation
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
 }));
 
-// Mock fetch API
-global.fetch = jest.fn();
-
 describe('RelationshipForm Component', () => {
   const mockPush = jest.fn();
 
   // Sample entities for dropdown options
-  const mockEntities = [
+  const mockEntities: Entity[] = [
     {
       id: 'philosopher-1',
       name: 'Immanuel Kant',
@@ -37,7 +39,7 @@ describe('RelationshipForm Component', () => {
   ];
 
   // Sample relationship data for edit tests
-  const mockRelationship = {
+  const mockRelationship: Relationship = {
     id: 'relation-1',
     sourceEntityId: 'philosopher-1',
     targetEntityId: 'concept-1',
@@ -46,6 +48,12 @@ describe('RelationshipForm Component', () => {
     importance: 5,
   };
 
+  // Mock implementation functions
+  const mockFetchEntities = jest.fn().mockResolvedValue(mockEntities);
+  const mockFetchRelationship = jest.fn().mockResolvedValue(mockRelationship);
+  const mockCreateRelationship = jest.fn().mockImplementation((data) => Promise.resolve({ id: 'new-relation-id', ...data }));
+  const mockUpdateRelationship = jest.fn().mockImplementation((id, data) => Promise.resolve({ id, ...mockRelationship, ...data }));
+
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -53,27 +61,83 @@ describe('RelationshipForm Component', () => {
     (useRouter as jest.Mock).mockReturnValue({
       push: mockPush,
     });
+  });
 
-    // Mock successful fetch for entities list
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: jest.fn().mockResolvedValue({
-        data: mockEntities,
-        pagination: { total: 3, page: 1, limit: 10, totalPages: 1 }
-      }),
+  describe('Pure Functions', () => {
+    describe('validateRequired', () => {
+      it('should return false for empty values', () => {
+        expect(validateRequired('')).toBe(false);
+        expect(validateRequired(null)).toBe(false);
+        expect(validateRequired(undefined)).toBe(false);
+      });
+
+      it('should return true for non-empty values', () => {
+        expect(validateRequired('test')).toBe(true);
+        expect(validateRequired(0)).toBe(true);
+        expect(validateRequired(false)).toBe(true);
+        expect(validateRequired([])).toBe(true);
+      });
+    });
+
+    describe('validateRelationshipForm', () => {
+      it('should validate required fields', () => {
+        const emptyData = {};
+        const result = validateRelationshipForm(emptyData);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Source entity is required');
+        expect(result.errors).toContain('Target entity is required');
+        expect(result.errors).toContain('Please select at least one relation type');
+      });
+
+      it('should validate source and target must be different', () => {
+        const sameEntityData = {
+          sourceEntityId: 'entity-1',
+          targetEntityId: 'entity-1',
+          relationTypes: ['DEVELOPMENT']
+        };
+        const result = validateRelationshipForm(sameEntityData);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Source and target entities must be different');
+      });
+
+      it('should validate relation types are required', () => {
+        const noRelationTypes = {
+          sourceEntityId: 'entity-1',
+          targetEntityId: 'entity-2',
+          relationTypes: []
+        };
+        const result = validateRelationshipForm(noRelationTypes);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Please select at least one relation type');
+      });
+
+      it('should return valid for complete data', () => {
+        const validData = {
+          sourceEntityId: 'entity-1',
+          targetEntityId: 'entity-2',
+          relationTypes: ['DEVELOPMENT']
+        };
+        const result = validateRelationshipForm(validData);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+      });
     });
   });
 
   describe('Rendering', () => {
     it('renders create form correctly', async () => {
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+        />
+      );
 
       // Initially show loading state for entities
-      expect(screen.getByRole('status')).toBeInTheDocument();
+      expect(screen.getByRole('status', { name: 'Loading entities' })).toBeInTheDocument();
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByText('Create New Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Check for required fields
@@ -86,53 +150,46 @@ describe('RelationshipForm Component', () => {
     });
 
     it('renders with pre-selected source entity when sourceEntityId is provided', async () => {
-      render(<RelationshipForm sourceEntityId="philosopher-1" />);
+      render(
+        <RelationshipForm
+          sourceEntityId="philosopher-1"
+          fetchEntities={mockFetchEntities}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByText('Create New Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Check source entity is selected and disabled
-      const sourceSelect = screen.getByLabelText('Source Entity') as HTMLSelectElement;
+      const sourceSelect = screen.getByTestId('source-entity-select') as HTMLSelectElement;
       expect(sourceSelect.value).toBe('philosopher-1');
       expect(sourceSelect).toBeDisabled();
 
       // Target entity should be enabled
-      const targetSelect = screen.getByLabelText('Target Entity') as HTMLSelectElement;
+      const targetSelect = screen.getByTestId('target-entity-select') as HTMLSelectElement;
       expect(targetSelect).not.toBeDisabled();
     });
 
     it('renders edit form correctly when relationshipId is provided', async () => {
-      // Mock fetch for existing relationship
-      (global.fetch as jest.Mock).mockImplementation((url) => {
-        if (url.includes('/api/philosophical-relationships/relation-1')) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(mockRelationship),
-          });
-        }
-        // Default response for entities fetch
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: mockEntities,
-            pagination: { total: 3, page: 1, limit: 10, totalPages: 1 }
-          }),
-        });
-      });
-
-      render(<RelationshipForm relationshipId="relation-1" />);
+      render(
+        <RelationshipForm
+          relationshipId="relation-1"
+          fetchEntities={mockFetchEntities}
+          fetchRelationship={mockFetchRelationship}
+        />
+      );
 
       // Wait for relationship data to load
       await waitFor(() => {
-        expect(screen.getByText('Edit Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Edit Relationship Form' })).toBeInTheDocument();
       });
 
       // Check form is populated with relationship data
-      const sourceSelect = screen.getByLabelText('Source Entity') as HTMLSelectElement;
-      const targetSelect = screen.getByLabelText('Target Entity') as HTMLSelectElement;
-      const descriptionField = screen.getByLabelText('Description') as HTMLTextAreaElement;
+      const sourceSelect = screen.getByTestId('source-entity-select') as HTMLSelectElement;
+      const targetSelect = screen.getByTestId('target-entity-select') as HTMLSelectElement;
+      const descriptionField = screen.getByTestId('description-input') as HTMLTextAreaElement;
 
       expect(sourceSelect.value).toBe('philosopher-1');
       expect(targetSelect.value).toBe('concept-1');
@@ -144,261 +201,217 @@ describe('RelationshipForm Component', () => {
 
       // Check submit button text for edit mode
       expect(screen.getByRole('button', { name: 'Update Relationship' })).toBeInTheDocument();
+
+      // Verify mock functions were called
+      expect(mockFetchEntities).toHaveBeenCalled();
+      expect(mockFetchRelationship).toHaveBeenCalledWith('relation-1');
     });
   });
 
   describe('Entity Selection', () => {
     it('populates entity dropdowns with fetched data', async () => {
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByText('Create New Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Check that dropdown options are populated
       // First option is the placeholder
       expect(screen.getByText('Select Source Entity')).toBeInTheDocument();
 
-      // Entity options should be present
-      expect(screen.getByText('Immanuel Kant (Philosopher)')).toBeInTheDocument();
-      expect(screen.getByText('Categorical Imperative (PhilosophicalConcept)')).toBeInTheDocument();
-      expect(screen.getByText('Ethics (Branch)')).toBeInTheDocument();
+      // Get the source entity select element
+      const sourceSelect = screen.getByTestId('source-entity-select');
+
+      // Check that the options are present in the source entity dropdown
+      const sourceOptions = Array.from(sourceSelect.querySelectorAll('option'));
+      expect(sourceOptions.some(option => option.textContent === 'Immanuel Kant (Philosopher)')).toBe(true);
+      expect(sourceOptions.some(option => option.textContent === 'Categorical Imperative (PhilosophicalConcept)')).toBe(true);
+      expect(sourceOptions.some(option => option.textContent === 'Ethics (Branch)')).toBe(true);
     });
 
     it('filters target entity options to exclude selected source entity', async () => {
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByText('Immanuel Kant (Philosopher)')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Select a source entity
-      const sourceSelect = screen.getByLabelText('Source Entity');
+      const sourceSelect = screen.getByTestId('source-entity-select');
       fireEvent.change(sourceSelect, { target: { value: 'philosopher-1' } });
 
       // Check target entity options
-      const targetSelect = screen.getByLabelText('Target Entity') as HTMLSelectElement;
+      const targetSelect = screen.getByTestId('target-entity-select') as HTMLSelectElement;
 
-      // Should not be able to select the same entity as target
-      expect(Array.from(targetSelect.options).map(opt => opt.value)).not.toContain('philosopher-1');
+      // Get all the option elements
+      const options = Array.from(targetSelect.options).map(opt => opt.value);
 
-      // Other entities should still be available
-      expect(screen.getAllByText('Categorical Imperative (PhilosophicalConcept)')).toHaveLength(1);
-      expect(screen.getAllByText('Ethics (Branch)')).toHaveLength(1);
+      // Should not contain the selected source entity
+      expect(options).not.toContain('philosopher-1');
+
+      // Should contain the other entities
+      expect(options).toContain('concept-1');
+      expect(options).toContain('branch-1');
+
+      // Verify by option text content as well
+      const targetOptions = Array.from(targetSelect.querySelectorAll('option'));
+      expect(targetOptions.some(option => option.textContent === 'Immanuel Kant (Philosopher)')).toBe(false);
+      expect(targetOptions.some(option => option.textContent === 'Categorical Imperative (PhilosophicalConcept)')).toBe(true);
     });
   });
 
-  describe('Relation Type Selection', () => {
-    it('allows selecting multiple relation types', async () => {
-      render(<RelationshipForm />);
+  describe('Form Validation', () => {
+    it('shows validation errors when submitting with empty fields', async () => {
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+          createRelationship={mockCreateRelationship}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByLabelText('Relation Types')).toBeInTheDocument();
-      });
-
-      // Select multiple relation types
-      const relationTypesSelect = screen.getByLabelText('Relation Types') as HTMLSelectElement;
-
-      // Mock selection of multiple options
-      // Note: fireEvent doesn't fully support multi-select, so we're directly setting the value
-      fireEvent.change(relationTypesSelect, {
-        target: {
-          options: [
-            { value: 'DEVELOPMENT', selected: true },
-            { value: 'ADDRESSES_PROBLEMATIC', selected: true }
-          ]
-        }
-      });
-
-      // Update formData to reflect selected options
-      expect(relationTypesSelect.multiple).toBe(true);
-    });
-  });
-
-  describe('Form Submission', () => {
-    it('validates required fields before submission', async () => {
-      render(<RelationshipForm />);
-
-      // Wait for entities to load
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Create Relationship' })).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Submit without filling required fields
       fireEvent.click(screen.getByRole('button', { name: 'Create Relationship' }));
 
-      // Should show validation errors
-      // Note: The exact error messages depend on your form validation implementation
-      // The test will rely on your DOM structure and validation feedback mechanisms
+      // Check for validation errors - verify validation errors appear in the document
+      await waitFor(() => {
+        expect(screen.getByTestId('validation-errors')).toBeInTheDocument();
+      });
 
-      // Check if fetch was not called due to validation errors
-      expect(global.fetch).not.toHaveBeenCalledWith(
-        '/api/philosophical-relationships',
-        expect.any(Object)
-      );
+      // Now check for the validation message content in the document
+      expect(screen.getAllByText(/Source entity is required/i)).toHaveLength(2);
+      expect(screen.getAllByText(/Target entity is required/i)).toHaveLength(2);
+      expect(screen.getAllByText(/Please select at least one relation type/i)).toHaveLength(2);
+
+
+      // Verify create function was not called
+      expect(mockCreateRelationship).not.toHaveBeenCalled();
     });
 
-    it('validates source and target must be different', async () => {
-      render(<RelationshipForm />);
+    it('validates that at least one relation type must be selected', async () => {
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+          createRelationship={mockCreateRelationship}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Create Relationship' })).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
-      // Set same source and target (need to bypass the UI filtering)
-      // We'll do this by directly setting formData values, which doesn't actually happen in the UI
-      // but we're testing the validation logic
-      const sourceSelect = screen.getByLabelText('Source Entity');
-      const targetSelect = screen.getByLabelText('Target Entity');
-
-      // Select source entity
-      fireEvent.change(sourceSelect, { target: { value: 'philosopher-1' } });
-
-      // Hack the target to be the same (normally UI prevents this)
-      Object.defineProperty(targetSelect, 'value', {
-        value: 'philosopher-1',
-        writable: true
-      });
-
-      // Select a relation type (required field)
-      const relationTypesSelect = screen.getByLabelText('Relation Types');
-      fireEvent.change(relationTypesSelect, {
-        target: {
-          options: [{ value: 'DEVELOPMENT', selected: true }]
-        }
-      });
+      // Fill source and target but not relation types
+      fireEvent.change(screen.getByTestId('source-entity-select'), { target: { value: 'philosopher-1' } });
+      fireEvent.change(screen.getByTestId('target-entity-select'), { target: { value: 'concept-1' } });
 
       // Submit form
       fireEvent.click(screen.getByRole('button', { name: 'Create Relationship' }));
 
-      // Should show validation error
+      // Check for validation errors
       await waitFor(() => {
-        expect(screen.getByText('Source and target entities must be different')).toBeInTheDocument();
+        const validationErrors = screen.getByTestId('validation-errors');
+        expect(validationErrors.textContent).toMatch(/Please select at least one relation type/i);
       });
 
-      // Fetch should not be called
-      expect(global.fetch).not.toHaveBeenCalledWith(
-        '/api/philosophical-relationships',
-        expect.any(Object)
-      );
+      // Verify create function was not called
+      expect(mockCreateRelationship).not.toHaveBeenCalled();
     });
 
-    it('validates at least one relation type is selected', async () => {
-      render(<RelationshipForm />);
+    it('clears validation errors when form fields are changed', async () => {
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+          createRelationship={mockCreateRelationship}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Create Relationship' })).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
-      // Fill required fields but skip relation types
-      const sourceSelect = screen.getByLabelText('Source Entity');
-      const targetSelect = screen.getByLabelText('Target Entity');
-
-      fireEvent.change(sourceSelect, { target: { value: 'philosopher-1' } });
-      fireEvent.change(targetSelect, { target: { value: 'concept-1' } });
-
-      // Submit form
+      // Submit without filling required fields to trigger errors
       fireEvent.click(screen.getByRole('button', { name: 'Create Relationship' }));
 
-      // Should show validation error
+      // Check for validation error messages
       await waitFor(() => {
-        expect(screen.getByText('Please select at least one relation type')).toBeInTheDocument();
+        expect(screen.getByTestId('validation-errors')).toBeInTheDocument();
+        expect(screen.getAllByText(/Source entity is required/i)).toHaveLength(2);
       });
 
-      // Fetch should not be called
-      expect(global.fetch).not.toHaveBeenCalledWith(
-        '/api/philosophical-relationships',
-        expect.any(Object)
-      );
-    });
+      // Now fill in the source field
+      fireEvent.change(screen.getByTestId('source-entity-select'), { target: { value: 'philosopher-1' } });
 
+      // The validation errors should disappear
+      await waitFor(() => {
+        expect(screen.queryByTestId('validation-errors')).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Form Submission', () => {
     it('successfully submits new relationship data', async () => {
-      // Mock successful creation response
-      (global.fetch as jest.Mock).mockImplementation((url, options) => {
-        if (url === '/api/philosophical-relationships' && options?.method === 'POST') {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({
-              id: 'new-relation-id',
-              sourceEntityId: 'philosopher-1',
-              targetEntityId: 'concept-1',
-              relationTypes: ['DEVELOPMENT'],
-              description: 'Test description',
-              importance: 3
-            }),
-          });
-        }
-        // Default response for entities fetch
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: mockEntities,
-            pagination: { total: 3, page: 1, limit: 10, totalPages: 1 }
-          }),
-        });
-      });
-
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+          createRelationship={mockCreateRelationship}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Create Relationship' })).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Fill all required fields
-      const sourceSelect = screen.getByLabelText('Source Entity');
-      const targetSelect = screen.getByLabelText('Target Entity');
-      const relationTypesSelect = screen.getByLabelText('Relation Types');
-      const descriptionField = screen.getByLabelText('Description');
+      fireEvent.change(screen.getByTestId('source-entity-select'), { target: { value: 'philosopher-1' } });
+      fireEvent.change(screen.getByTestId('target-entity-select'), { target: { value: 'concept-1' } });
 
-      fireEvent.change(sourceSelect, { target: { value: 'philosopher-1' } });
-      fireEvent.change(targetSelect, { target: { value: 'concept-1' } });
-      fireEvent.change(relationTypesSelect, {
-        target: {
-          options: [{ value: 'DEVELOPMENT', selected: true }]
-        }
-      });
-      fireEvent.change(descriptionField, { target: { value: 'Test description' } });
+      // Select relation type (using a mock approach to avoid options issue)
+      const relationTypesSelect = screen.getByTestId('relation-types-select');
+      // Mock the selection without trying to modify the options directly
+      jest.spyOn(relationTypesSelect, 'selectedOptions', 'get').mockReturnValue([
+        { value: 'DEVELOPMENT' } as HTMLOptionElement
+      ]);
+      fireEvent.change(relationTypesSelect);
+
+      // Fill description
+      fireEvent.change(screen.getByTestId('description-input'), { target: { value: 'Test description' } });
 
       // Submit form
-      fireEvent.click(screen.getByRole('button', { name: 'Create Relationship' }));
+      fireEvent.click(screen.getByTestId('submit-button'));
 
       // Verify loading state
       expect(screen.getByText('Creating...')).toBeInTheDocument();
 
-      // Verify fetch call
+      // Wait for success message
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          '/api/philosophical-relationships',
-          expect.objectContaining({
-            method: 'POST',
-            body: expect.any(String),
-          })
-        );
+        expect(screen.getByText('Relationship created successfully')).toBeInTheDocument();
       });
 
-      // Check request payload
-      const fetchCall = (global.fetch as jest.Mock).mock.calls.find(
-        call => call[0] === '/api/philosophical-relationships'
-      );
-      const requestBody = JSON.parse(fetchCall[1].body);
-
-      expect(requestBody).toEqual({
+      // Verify create function was called with correct data
+      expect(mockCreateRelationship).toHaveBeenCalledWith({
         sourceEntityId: 'philosopher-1',
         targetEntityId: 'concept-1',
         relationTypes: ['DEVELOPMENT'],
         description: 'Test description',
         importance: 3 // Default value
-      });
-
-      // Check success message and redirection
-      await waitFor(() => {
-        expect(screen.getByText('Relationship created successfully')).toBeInTheDocument();
       });
 
       // Should redirect after a delay
@@ -408,84 +421,48 @@ describe('RelationshipForm Component', () => {
     });
 
     it('successfully updates an existing relationship', async () => {
-      // Mock fetch responses for edit mode
-      (global.fetch as jest.Mock).mockImplementation((url, options) => {
-        if (url.includes('/api/philosophical-relationships/relation-1') && options?.method === 'PATCH') {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({
-              ...mockRelationship,
-              description: 'Updated description',
-              importance: 4
-            }),
-          });
-        }
-        if (url.includes('/api/philosophical-relationships/relation-1') && !options?.method) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(mockRelationship),
-          });
-        }
-        // Default response for entities fetch
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: mockEntities,
-            pagination: { total: 3, page: 1, limit: 10, totalPages: 1 }
-          }),
-        });
-      });
-
-      render(<RelationshipForm relationshipId="relation-1" />);
+      render(
+        <RelationshipForm
+          relationshipId="relation-1"
+          fetchEntities={mockFetchEntities}
+          fetchRelationship={mockFetchRelationship}
+          updateRelationship={mockUpdateRelationship}
+        />
+      );
 
       // Wait for relationship data to load
       await waitFor(() => {
-        expect(screen.getByText('Edit Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Edit Relationship Form' })).toBeInTheDocument();
       });
 
       // Update description field
-      const descriptionField = screen.getByLabelText('Description');
-      fireEvent.change(descriptionField, { target: { value: 'Updated description' } });
+      fireEvent.change(screen.getByTestId('description-input'), { target: { value: 'Updated description' } });
 
       // Update importance slider
-      const importanceSlider = screen.getByLabelText('Importance (1-5)');
-      fireEvent.change(importanceSlider, { target: { value: 4 } });
+      fireEvent.change(screen.getByTestId('importance-slider'), { target: { value: '4' } });
 
       // Submit form
-      fireEvent.click(screen.getByRole('button', { name: 'Update Relationship' }));
+      fireEvent.click(screen.getByTestId('submit-button'));
 
       // Verify loading state
       expect(screen.getByText('Updating...')).toBeInTheDocument();
 
-      // Verify fetch call
-      await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          '/api/philosophical-relationships/relation-1',
-          expect.objectContaining({
-            method: 'PATCH',
-            body: expect.any(String),
-          })
-        );
-      });
-
-      // Check request payload
-      const fetchCalls = (global.fetch as jest.Mock).mock.calls;
-      const updateCall = fetchCalls.find(
-        call => call[0].includes('/api/philosophical-relationships/relation-1') && call[1]?.method === 'PATCH'
-      );
-      const requestBody = JSON.parse(updateCall[1].body);
-
-      expect(requestBody).toEqual(expect.objectContaining({
-        description: 'Updated description',
-        importance: 4
-      }));
-
-      // Check success message and redirection
+      // Wait for success message
       await waitFor(() => {
         expect(screen.getByText('Relationship updated successfully')).toBeInTheDocument();
       });
 
-      // Should redirect to source entity page after a delay
+      // Verify update function was called with correct data
+      expect(mockUpdateRelationship).toHaveBeenCalledWith('relation-1', {
+        sourceEntityId: 'philosopher-1',
+        targetEntityId: 'concept-1',
+        relationTypes: ['DEVELOPMENT'],
+        description: 'Updated description',
+        importance: 4,
+        id: 'relation-1'
+      });
+
+      // Should redirect after a delay
       await waitFor(() => {
         expect(mockPush).toHaveBeenCalledWith('/admin/philosophical-entities/philosopher-1');
       }, { timeout: 2000 });
@@ -494,14 +471,13 @@ describe('RelationshipForm Component', () => {
 
   describe('Error Handling', () => {
     it('displays error when entity fetching fails', async () => {
-      // Mock fetch error for entities
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: jest.fn().mockResolvedValue({ error: 'Failed to load entities' }),
-      });
+      const mockFetchError = jest.fn().mockRejectedValue(new Error('Failed to load entities'));
 
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchError}
+        />
+      );
 
       // Error message should be displayed
       await waitFor(() => {
@@ -510,26 +486,15 @@ describe('RelationshipForm Component', () => {
     });
 
     it('displays error when fetching relationship data fails in edit mode', async () => {
-      // Mock fetch error for relationship data
-      (global.fetch as jest.Mock).mockImplementation((url) => {
-        if (url.includes('/api/philosophical-relationships/')) {
-          return Promise.resolve({
-            ok: false,
-            status: 404,
-            json: () => Promise.resolve({ error: 'Relationship not found' }),
-          });
-        }
-        // Successful response for entities
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: mockEntities,
-            pagination: { total: 3, page: 1, limit: 10, totalPages: 1 }
-          }),
-        });
-      });
+      const mockFetchRelationshipError = jest.fn().mockRejectedValue(new Error('Relationship not found'));
 
-      render(<RelationshipForm relationshipId="nonexistent-id" />);
+      render(
+        <RelationshipForm
+          relationshipId="nonexistent-id"
+          fetchEntities={mockFetchEntities}
+          fetchRelationship={mockFetchRelationshipError}
+        />
+      );
 
       // Error message should be displayed
       await waitFor(() => {
@@ -538,47 +503,34 @@ describe('RelationshipForm Component', () => {
     });
 
     it('displays API errors during form submission', async () => {
-      // Mock API error
-      (global.fetch as jest.Mock).mockImplementation((url, options) => {
-        if (url === '/api/philosophical-relationships' && options?.method === 'POST') {
-          return Promise.resolve({
-            ok: false,
-            status: 400,
-            json: () => Promise.resolve({ error: 'Invalid relationship data' }),
-          });
-        }
-        // Successful response for entities
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            data: mockEntities,
-            pagination: { total: 3, page: 1, limit: 10, totalPages: 1 }
-          }),
-        });
-      });
+      const mockCreateError = jest.fn().mockRejectedValue(new Error('Invalid relationship data'));
 
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+          createRelationship={mockCreateError}
+        />
+      );
 
       // Wait for entities to load
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Create Relationship' })).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Fill required fields
-      const sourceSelect = screen.getByLabelText('Source Entity');
-      const targetSelect = screen.getByLabelText('Target Entity');
-      const relationTypesSelect = screen.getByLabelText('Relation Types');
+      fireEvent.change(screen.getByTestId('source-entity-select'), { target: { value: 'philosopher-1' } });
+      fireEvent.change(screen.getByTestId('target-entity-select'), { target: { value: 'concept-1' } });
 
-      fireEvent.change(sourceSelect, { target: { value: 'philosopher-1' } });
-      fireEvent.change(targetSelect, { target: { value: 'concept-1' } });
-      fireEvent.change(relationTypesSelect, {
-        target: {
-          options: [{ value: 'DEVELOPMENT', selected: true }]
-        }
-      });
+      // Select relation type (using a mock approach to avoid options issue)
+      const relationTypesSelect = screen.getByTestId('relation-types-select');
+      // Mock the selection without trying to modify the options directly
+      jest.spyOn(relationTypesSelect, 'selectedOptions', 'get').mockReturnValue([
+        { value: 'DEVELOPMENT' } as HTMLOptionElement
+      ]);
+      fireEvent.change(relationTypesSelect);
 
       // Submit form
-      fireEvent.click(screen.getByRole('button', { name: 'Create Relationship' }));
+      fireEvent.click(screen.getByTestId('submit-button'));
 
       // Error message should be displayed
       await waitFor(() => {
@@ -592,29 +544,38 @@ describe('RelationshipForm Component', () => {
 
   describe('Navigation', () => {
     it('provides cancel link to return to entity page', async () => {
-      render(<RelationshipForm sourceEntityId="philosopher-1" />);
+      render(
+        <RelationshipForm
+          sourceEntityId="philosopher-1"
+          fetchEntities={mockFetchEntities}
+        />
+      );
 
       // Wait for component to load
       await waitFor(() => {
-        expect(screen.getByText('Create New Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Check cancel button links to source entity page
-      const cancelButton = screen.getByRole('link', { name: 'Cancel' });
+      const cancelButton = screen.getByRole('link', { name: 'Cancel and return to entity page' });
       expect(cancelButton).toHaveAttribute('href', '/admin/philosophical-entities/philosopher-1');
     });
 
     it('provides cancel link to entity list when no source entity', async () => {
-      render(<RelationshipForm />);
+      render(
+        <RelationshipForm
+          fetchEntities={mockFetchEntities}
+        />
+      );
 
       // Wait for component to load
       await waitFor(() => {
-        expect(screen.getByText('Create New Relationship')).toBeInTheDocument();
+        expect(screen.getByRole('form', { name: 'Create Relationship Form' })).toBeInTheDocument();
       });
 
       // Check cancel button links to entity list
-      const cancelButton = screen.getByRole('link', { name: 'Cancel' });
-      expect(cancelButton).toHaveAttribute('href', '/admin/philosophical-entities/');
+      const cancelButton = screen.getByRole('link', { name: 'Cancel and return to entity page' });
+      expect(cancelButton).toHaveAttribute('href', '/admin/philosophical-entities');
     });
   });
 });
