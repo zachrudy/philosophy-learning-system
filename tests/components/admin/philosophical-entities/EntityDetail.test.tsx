@@ -23,8 +23,8 @@ describe('EntityDetail Component', () => {
     birthplace: 'Königsberg, Prussia',
     nationality: 'Prussian',
     biography: 'Kant created a new perspective in philosophy.',
-    startDate: '1724-04-22T00:00:00.000Z',
-    endDate: '1804-02-12T00:00:00.000Z',
+    startYear: 1724,
+    endYear: 1804,
     createdAt: '2025-01-01T00:00:00.000Z',
     updatedAt: '2025-01-01T00:00:00.000Z',
     relationships: [

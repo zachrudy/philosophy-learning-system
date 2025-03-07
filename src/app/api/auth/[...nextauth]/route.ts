@@ -1,10 +1,10 @@
+// In src/app/api/auth/[...nextauth]/route.ts
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from '@/lib/db/prisma';
-import { USER_ROLES } from '@/lib/constants';
-import { verifyPassword } from '@/lib/auth'; // Import the proper function
+import { verifyPassword } from '@/lib/auth';
 
-const handler = NextAuth({
+export const authOptions = {
   providers: [
     CredentialsProvider({
       name: 'Credentials',
@@ -31,6 +31,7 @@ const handler = NextAuth({
           return null;
         }
 
+        // Return the user with the role explicitly included
         return {
           id: user.id,
           email: user.email,
@@ -42,16 +43,20 @@ const handler = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user }) {
+      // When signing in, include user data in the token
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        console.log("Added to JWT token:", { id: user.id, role: user.role });
       }
       return token;
     },
     async session({ session, token }) {
-      if (token && session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
+      // Add token info to the session
+      if (session.user) {
+        session.user.id = token.id;
+        session.user.role = token.role;
+        console.log("Added to session:", { id: token.id, role: token.role });
       }
       return session;
     },
@@ -64,6 +69,8 @@ const handler = NextAuth({
   session: {
     strategy: 'jwt',
   },
-});
+};
+
+const handler = NextAuth(authOptions);
 
 export { handler as GET, handler as POST };

@@ -102,6 +102,13 @@ export class PhilosophicalEntityController {
       // Handle array fields that need to be serialized for storage
       const processedData = { ...data };
 
+      if (typeof processedData.startYear === 'string') {
+        processedData.startYear = parseInt(processedData.startYear, 10);
+      }
+      if (typeof processedData.endYear === 'string') {
+        processedData.endYear = parseInt(processedData.endYear, 10);
+      }
+      
       // Serialize keyTerms array if provided
       if (Array.isArray(processedData.keyTerms)) {
         processedData.keyTerms = serializeJsonForDb(processedData.keyTerms);

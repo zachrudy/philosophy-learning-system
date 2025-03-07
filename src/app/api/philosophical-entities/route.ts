@@ -53,27 +53,35 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/philosophical-entities
+// In src/app/api/philosophical-entities/route.ts
 export async function POST(request: NextRequest) {
-  try {
-    // Check authentication
-    const session = await getServerSession();
+ try {
+   // Check authentication
+   const session = await getServerSession();
 
-    if (!session || !session.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+   if (!session || !session.user) {
+     return NextResponse.json(
+       { error: 'Unauthorized' },
+       { status: 401 }
+     );
+   }
 
-    // Check authorization - only admin and instructors can create entities
-    const userRole = session.user.role;
-    if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
-      return NextResponse.json(
-        { error: 'Forbidden - insufficient permissions' },
-        { status: 403 }
-      );
-    }
+   // Get user role directly from database
+   const user = await prisma.user.findUnique({
+     where: { email: session.user.email },
+     select: { role: true }
+   });
+
+   // Check authorization based on database role
+   const userRole = user?.role;
+   console.log('User role from DB lookup:', userRole);
+
+   if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
+     return NextResponse.json(
+       { error: 'Forbidden - insufficient permissions' },
+       { status: 403 }
+     );
+   }
 
     // Parse request body
     let body;

@@ -118,8 +118,8 @@ export type CreatePhilosophicalEntityDTO = {
   type: string;
   name: string;
   description: string;
-  startDate?: Date;
-  endDate?: Date;
+  startYear?: number | null;
+  endYear?: number | null;
   // Type-specific fields
   birthplace?: string;
   nationality?: string;

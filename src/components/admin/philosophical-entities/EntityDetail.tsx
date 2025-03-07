@@ -11,8 +11,8 @@ type PhilosophicalEntity = {
   type: string;
   name: string;
   description: string;
-  startDate?: string | null;
-  endDate?: string | null;
+  startYear?: number | null;
+  endYear?: number | null;
   birthplace?: string | null;
   nationality?: string | null;
   biography?: string | null;
@@ -295,15 +295,15 @@ const EntityDetail: React.FC<EntityDetailProps> = ({ entityId }) => {
             </div>
 
             {/* Show dates if provided */}
-            {(entity.startDate || entity.endDate) && (
+            {(entity.startYear || entity.endYear) && (
               <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500">
                   {entity.type === 'Philosopher' ? 'Lifespan' : 'Time Period'}
                 </dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {entity.startDate && formatDate(entity.startDate)}
-                  {entity.startDate && entity.endDate && ' - '}
-                  {entity.endDate && formatDate(entity.endDate)}
+                  {entity.startYear ? entity.startYear : ''}
+                  {entity.startYear && entity.endYear && ' - '}
+                  {entity.endYear ? entity.endYear : ''}
                 </dd>
               </div>
             )}

@@ -10,8 +10,8 @@ type PhilosophicalEntity = {
   type: string;
   name: string;
   description: string;
-  startDate?: string | null;
-  endDate?: string | null;
+  startYear: null,
+  endYear: null,
   birthplace?: string | null;
   nationality?: string | null;
   biography?: string | null;
@@ -461,39 +461,43 @@ const EntityForm: React.FC<EntityFormProps> = ({ entityId, initialData }) => {
                     />
                   </div>
 
-                  {/* Start Date */}
+                  {/* Start Year */}
                   <div className="col-span-6 sm:col-span-3">
-                    <label htmlFor="startDate" className="block text-sm font-medium text-gray-700">
-                      Start Date
+                    <label htmlFor="startYear" className="block text-sm font-medium text-gray-700">
+                      Start Year
                     </label>
                     <input
-                      type="date"
-                      name="startDate"
-                      id="startDate"
-                      value={formData.startDate || ''}
+                      type="number"
+                      name="startYear"
+                      id="startYear"
+                      value={formData.startYear || ''}
                       onChange={handleInputChange}
-                      className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                      min="0"
+                      max="9999"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
                     <p className="mt-1 text-xs text-gray-500">
-                      For philosophers: birth date. For concepts/movements: origination date.
+                      For philosophers: birth year. For concepts/movements: origination year.
                     </p>
                   </div>
 
-                  {/* End Date */}
+                  {/* End Year */}
                   <div className="col-span-6 sm:col-span-3">
-                    <label htmlFor="endDate" className="block text-sm font-medium text-gray-700">
-                      End Date
+                    <label htmlFor="endYear" className="block text-sm font-medium text-gray-700">
+                      End Year
                     </label>
                     <input
-                      type="date"
-                      name="endDate"
-                      id="endDate"
-                      value={formData.endDate || ''}
+                      type="number"
+                      name="endYear"
+                      id="endYear"
+                      value={formData.endYear || ''}
                       onChange={handleInputChange}
-                      className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                      min="0"
+                      max="9999"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
                     <p className="mt-1 text-xs text-gray-500">
-                      For philosophers: death date. For movements: end date if applicable.
+                      For philosophers: death year. For movements: end year if applicable.
                     </p>
                   </div>
 
