@@ -11,23 +11,25 @@ export const USER_ROLES = {
 
 export type UserRole = keyof typeof USER_ROLES;
 
+// Updated with expanded status options from schema
 export const PROGRESS_STATUS = {
-  NOT_STARTED: "NOT_STARTED",
-  IN_PROGRESS: "IN_PROGRESS",
-  READY_FOR_REFLECTION: "READY_FOR_REFLECTION",
-  REFLECTION_SUBMITTED: "REFLECTION_SUBMITTED",
-  MASTERY_DEMONSTRATED: "MASTERY_DEMONSTRATED",
-  COMPLETED: "COMPLETED"
+  LOCKED: "LOCKED",
+  READY: "READY",
+  STARTED: "STARTED",
+  WATCHED: "WATCHED",
+  INITIAL_REFLECTION: "INITIAL_REFLECTION",
+  MASTERY_TESTING: "MASTERY_TESTING",
+  MASTERED: "MASTERED"
 } as const;
 
 export type ProgressStatus = keyof typeof PROGRESS_STATUS;
 
+// Updated to match the new promptType field in Reflection model
 export const PROMPT_TYPES = {
-  UNDERSTANDING: "UNDERSTANDING",
-  APPLICATION: "APPLICATION",
-  ANALYSIS: "ANALYSIS",
-  SYNTHESIS: "SYNTHESIS",
-  EVALUATION: "EVALUATION"
+  PRE_LECTURE: "pre-lecture",
+  INITIAL: "initial",
+  MASTERY: "mastery",
+  DISCUSSION: "discussion"
 } as const;
 
 export type PromptType = keyof typeof PROMPT_TYPES;
@@ -45,6 +47,27 @@ export const RELATION_TYPES = {
 } as const;
 
 export type RelationType = keyof typeof RELATION_TYPES;
+
+// New constant for lecture-entity relation types
+export const LECTURE_ENTITY_RELATION_TYPES = {
+  INTRODUCES: "introduces",
+  EXPANDS: "expands",
+  CRITIQUES: "critiques",
+  APPLIES: "applies",
+  CONTEXTUALIZES: "contextualizes",
+  COMPARES: "compares"
+} as const;
+
+export type LectureEntityRelationType = keyof typeof LECTURE_ENTITY_RELATION_TYPES;
+
+// Reflection status types
+export const REFLECTION_STATUS = {
+  SUBMITTED: "SUBMITTED",
+  EVALUATED: "EVALUATED",
+  MASTERY_ACHIEVED: "MASTERY_ACHIEVED"
+} as const;
+
+export type ReflectionStatus = keyof typeof REFLECTION_STATUS;
 
 export const ONTOLOGICAL_POSITIONS = {
   ONE_WORLD: "ONE_WORLD",

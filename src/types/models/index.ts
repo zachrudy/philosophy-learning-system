@@ -1,59 +1,61 @@
 // src/types/models/index.ts
 import {
   User,
-  Concept,
   Lecture,
   Progress,
   Reflection,
-  ReflectionPrompt,
   PhilosophicalEntity,
   PhilosophicalRelation,
-  LecturePrerequisite
+  LecturePrerequisite,
+  LectureEntityRelation
 } from '@prisma/client';
 
 import {
   UserRole,
   ProgressStatus,
   PromptType,
-  RelationType
+  RelationType,
+  LectureEntityRelationType
 } from '@/lib/constants';
 
 import { OntologicalPosition } from '@/lib/constants';
 
-
 // Re-export Prisma types
 export type {
   User,
-  Concept,
   Lecture,
   Progress,
   Reflection,
-  ReflectionPrompt,
   PhilosophicalEntity,
   PhilosophicalRelation,
-  LecturePrerequisite
+  LecturePrerequisite,
+  LectureEntityRelation
 };
 
 // Export our type definitions for the string enums
-export type { UserRole, ProgressStatus, PromptType, RelationType };
+export type { UserRole, ProgressStatus, PromptType, RelationType, LectureEntityRelationType };
+
+// Define the LectureEntityRelationType enum (to be added to constants.ts)
+// export enum LectureEntityRelationType {
+//   INTRODUCES = "INTRODUCES",
+//   EXPANDS = "EXPANDS",
+//   CRITIQUES = "CRITIQUES",
+//   APPLIES = "APPLIES",
+//   CONTEXTUALIZES = "CONTEXTUALIZES",
+//   COMPARES = "COMPARES"
+// }
 
 // Extended types with relations
-export type ConceptWithRelations = Concept & {
-  prerequisites?: Array<Concept>;
-  dependentConcepts?: Array<Concept>;
-  lectures?: Array<Lecture>;
-  reflectionPrompts?: Array<ReflectionPrompt>;
-};
-
 export type PhilosophicalEntityWithRelations = PhilosophicalEntity & {
   sourceRelations?: Array<PhilosophicalRelation>;
   targetRelations?: Array<PhilosophicalRelation>;
-  lectures?: Array<Lecture>;
-  reflectionPrompts?: Array<ReflectionPrompt>;
+  lectureRelations?: Array<LectureEntityRelation>;
+  lecture?: Lecture;
 };
 
 export type LectureWithRelations = Lecture & {
   entities?: Array<PhilosophicalEntity>;
+  entityRelations?: Array<LectureEntityRelation>;
   prerequisites?: Array<{
     id: string;
     prerequisiteLectureId: string;
@@ -72,18 +74,31 @@ export type LectureWithRelations = Lecture & {
   reflections?: Array<Reflection>;
 };
 
+export type LectureEntityRelationWithRelations = LectureEntityRelation & {
+  lecture: Lecture;
+  entity: PhilosophicalEntity;
+};
+
 export type UserWithProgress = User & {
   progress?: Array<Progress>;
   reflections?: Array<Reflection>;
 };
 
-// DTO types (Data Transfer Objects)
-export type CreateConceptDTO = {
-  name: string;
-  description: string;
-  prerequisiteIds?: string[];
+// Reflection with parsed AI evaluation
+export type ReflectionWithEvaluation = Reflection & {
+  parsedEvaluation?: {
+    score: number;
+    feedback: string;
+    areas: {
+      strength: string[];
+      improvement: string[];
+    };
+    conceptualUnderstanding: number;
+    criticalThinking: number;
+  } | null;
 };
 
+// DTO types (Data Transfer Objects)
 export type CreateLectureDTO = {
   title: string;
   description: string;
@@ -94,10 +109,19 @@ export type CreateLectureDTO = {
   order: number;
   embedAllowed?: boolean;
   sourceAttribution: string;
+
+  // Add new prompt fields
+  preLecturePrompt: string;
   initialPrompt: string;
   masteryPrompt: string;
   evaluationPrompt: string;
+  discussionPrompts: string;
+
   entityIds?: string[];
+  entityRelations?: Array<{
+    entityId: string;
+    relationType: LectureEntityRelationType;
+  }>;
   prerequisiteIds?: Array<{
     id: string;
     isRequired?: boolean;
@@ -112,6 +136,12 @@ export type LecturePrerequisiteDTO = {
   prerequisiteLectureId: string;
   isRequired?: boolean;
   importanceLevel?: number;
+};
+
+export type LectureEntityRelationDTO = {
+  lectureId: string;
+  entityId: string;
+  relationType: LectureEntityRelationType;
 };
 
 export type CreatePhilosophicalEntityDTO = {
@@ -145,13 +175,15 @@ export type CreatePhilosophicalRelationDTO = {
 export type CreateReflectionDTO = {
   userId: string;
   lectureId: string;
-  promptId: string;
+  promptType: PromptType; // Updated to use promptType directly
   content: string;
 };
 
 export type UpdateProgressDTO = {
   userId: string;
-  lectureId?: string;
-  conceptId?: string;
+  lectureId: string;
   status: ProgressStatus;
+  lastViewed?: Date;
+  completedAt?: Date;
+  decayFactor?: number;
 };
