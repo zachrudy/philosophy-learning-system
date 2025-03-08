@@ -16,6 +16,7 @@ import {
   LectureEntityRelationDTO,
   LecturePrerequisiteDTO
 } from '@/types/models';
+import { validateLecture } from '@/lib/validation/lectureValidation';
 
 /**
  * Controller for managing lectures
@@ -214,15 +215,19 @@ export class LectureController {
    * Create a new lecture
    */
   static async createLecture(data: CreateLectureDTO) {
-    try {
-      // Validate core required fields (needed for CSV import)
-      if (!data.title || !data.description || !data.contentUrl ||
-          !data.lecturerName || !data.category || !data.sourceAttribution) {
-        return {
-          success: false,
-          error: 'Missing core required fields: title, description, contentUrl, lecturerName, category, sourceAttribution'
-        };
-      }
+   try {
+     // Validate and sanitize the data
+     const validation = this.validateLectureData(data);
+
+     if (!validation.valid) {
+       return {
+         success: false,
+         error: `Validation failed: ${validation.errors.join(', ')}`
+       };
+     }
+
+     // Use the sanitized data
+     const sanitizedData = validation.sanitizedData!;
 
       // The prompt fields can have default placeholders if not provided (for CSV import workflow)
       const promptDefaults = {
@@ -232,15 +237,6 @@ export class LectureController {
         evaluationPrompt: data.evaluationPrompt || "Evaluation criteria placeholder. (To be updated)",
         discussionPrompts: data.discussionPrompts || "Discussion prompts placeholder. (To be updated)",
       };
-
-      // Validate content URL format
-      const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
-      if (!urlRegex.test(data.contentUrl)) {
-        return {
-          success: false,
-          error: 'Invalid content URL format'
-        };
-      }
 
       // Extract entity relationships and prerequisites for separate handling
       const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
@@ -367,29 +363,31 @@ export class LectureController {
    * Update an existing lecture
    */
   static async updateLecture(id: string, data: UpdateLectureDTO) {
-    try {
-      // First check if lecture exists
-      const existingLecture = await prisma.lecture.findUnique({
-        where: { id }
-      });
+   try {
+     // First check if lecture exists
+     const existingLecture = await prisma.lecture.findUnique({
+       where: { id }
+     });
 
-      if (!existingLecture) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
-      }
+     if (!existingLecture) {
+       return {
+         success: false,
+         error: 'Lecture not found'
+       };
+     }
 
-      // If content URL is provided, validate its format
-      if (data.contentUrl) {
-        const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
-        if (!urlRegex.test(data.contentUrl)) {
-          return {
-            success: false,
-            error: 'Invalid content URL format'
-          };
-        }
-      }
+     // Validate and sanitize the data
+     const validation = this.validateLectureData(data, true);
+
+     if (!validation.valid) {
+       return {
+         success: false,
+         error: `Validation failed: ${validation.errors.join(', ')}`
+       };
+     }
+
+     // Use the sanitized data
+     const sanitizedData = validation.sanitizedData!;
 
       // Extract entity relationships and prerequisites for separate handling
       const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
@@ -555,6 +553,9 @@ export class LectureController {
         });
       });
 
+      // After deletion, rebalance the order in the category
+      await this.rebalanceOrderInCategory(lecture.category, lecture.order);
+
       return {
         success: true,
         message: 'Lecture deleted successfully'
@@ -565,8 +566,7 @@ export class LectureController {
         success: false,
         error: `Failed to delete lecture: ${error.message}`
       };
-    }
-  }
+    }  }
 
   /**
    * Get all entity relationships for a lecture
@@ -607,53 +607,76 @@ export class LectureController {
   }
 
   /**
-   * Helper method to validate lecture data
-   * This could be expanded with more detailed validation
+   * Checks if the provided order value is unique within the category
    */
-  static validateLectureData(data: Partial<CreateLectureDTO>): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
+  static async isOrderUniqueInCategory(category: string, order: number, excludeLectureId?: string): Promise<boolean> {
+    const where: any = {
+      category,
+      order,
+    };
 
-    // Check required fields
-    if (data.title !== undefined && !data.title.trim()) {
-      errors.push('Title is required');
+    // Exclude the lecture being updated if an ID is provided
+    if (excludeLectureId) {
+      where.id = {
+        not: excludeLectureId
+      };
     }
 
-    if (data.description !== undefined && !data.description.trim()) {
-      errors.push('Description is required');
-    }
+    const existingLecture = await prisma.lecture.findFirst({
+      where
+    });
 
-    if (data.contentUrl !== undefined) {
-      const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
-      if (!urlRegex.test(data.contentUrl)) {
-        errors.push('Invalid content URL format');
+    return !existingLecture;
+  }
+
+  /**
+   * Gets the next available order in a category
+   */
+  static async getNextOrderInCategory(category: string): Promise<number> {
+    const maxOrderLecture = await prisma.lecture.findFirst({
+      where: { category },
+      orderBy: { order: 'desc' }
+    });
+
+    return maxOrderLecture ? maxOrderLecture.order + 1 : 0;
+  }
+
+  /**
+   * Rebalances the order of lectures in a category after a lecture is inserted or removed
+   */
+  static async rebalanceOrderInCategory(category: string, startOrder: number) {
+    // Get all lectures in the category from the start order
+    const lectures = await prisma.lecture.findMany({
+      where: {
+        category,
+        order: { gte: startOrder }
+      },
+      orderBy: { order: 'asc' }
+    });
+
+    // Rebalance the order
+    for (let i = 0; i < lectures.length; i++) {
+      const lecture = lectures[i];
+      const newOrder = startOrder + i;
+
+      if (lecture.order !== newOrder) {
+        await prisma.lecture.update({
+          where: { id: lecture.id },
+          data: { order: newOrder }
+        });
       }
     }
+  }
 
-    // Validate prompt fields
-    if (data.preLecturePrompt !== undefined && !data.preLecturePrompt.trim()) {
-      errors.push('Pre-lecture prompt is required');
-    }
-
-    if (data.initialPrompt !== undefined && !data.initialPrompt.trim()) {
-      errors.push('Initial prompt is required');
-    }
-
-    if (data.masteryPrompt !== undefined && !data.masteryPrompt.trim()) {
-      errors.push('Mastery prompt is required');
-    }
-
-    if (data.evaluationPrompt !== undefined && !data.evaluationPrompt.trim()) {
-      errors.push('Evaluation prompt is required');
-    }
-
-    if (data.discussionPrompts !== undefined && !data.discussionPrompts.trim()) {
-      errors.push('Discussion prompts are required');
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors
-    };
+  /**
+   * Enhanced validation method using the dedicated validation module
+   */
+  static validateLectureData(data: Partial<CreateLectureDTO>, isUpdate = false): {
+    valid: boolean;
+    errors: string[];
+    sanitizedData?: Partial<CreateLectureDTO>;
+  } {
+    return validateLecture(data, isUpdate);
   }
 
   /**
