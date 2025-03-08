@@ -34,7 +34,7 @@ model User {
 // Base model for all philosophical entities
 model PhilosophicalEntity {
   id          String   @id @default(cuid())
-  type        String   // Discriminator field: "Philosopher", "PhilosophicalConcept", "Branch", "Movement", "Problematic", "Era"
+  type        String // Discriminator field: "Philosopher", "PhilosophicalConcept", "Branch", "Movement", "Problematic", "Era"
   name        String
   description String
   startYear   Int?
@@ -44,9 +44,9 @@ model PhilosophicalEntity {
 
   // Type-specific fields (using JSON for flexibility in SQLite)
   // For Philosopher
-  birthplace  String?
-  nationality String?
-  biography   String?
+  birthplace          String?
+  nationality         String?
+  biography           String?
   ontologicalPosition String?
 
   // For PhilosophicalConcept
@@ -68,9 +68,10 @@ model PhilosophicalEntity {
   sourceRelations PhilosophicalRelation[] @relation("sourceEntity")
   targetRelations PhilosophicalRelation[] @relation("targetEntity")
 
-  // Many-to-many relationship with lectures
-  lectures         Lecture[]
-  reflectionPrompts ReflectionPrompt[]
+  // Add the typed relationship
+  lectureRelations LectureEntityRelation[]
+  Lecture          Lecture?                @relation(fields: [lectureId], references: [id])
+  lectureId        String?
 
   @@map("philosophical_entities")
 }
@@ -80,7 +81,7 @@ model PhilosophicalRelation {
   id             String   @id @default(cuid())
   sourceEntityId String
   targetEntityId String
-  relationTypes  String   // Stored as JSON string of relation types
+  relationTypes  String // Stored as JSON string of relation types
   description    String?
   importance     Int      @default(3) // 1-5 scale
   createdAt      DateTime @default(now())
@@ -94,64 +95,82 @@ model PhilosophicalRelation {
   @@map("philosophical_relations")
 }
 
-// Enhanced Lecture model
+// Enhanced Lecture model with prompt fields
 model Lecture {
-  id                String     @id @default(cuid())
+  id                String  @id @default(cuid())
   title             String
   description       String
-  contentUrl        String     // Changed from videoUrl to be more generic
-  lecturerName      String     // Michael Sugrue, Dr. Staloff, etc.
-  contentType       String     // "video", "podcast", etc.
-  category          String     // "introductions", "jerusalem", etc.
-  order             Int        // Order within its category
-  embedAllowed      Boolean    @default(true)
-  sourceAttribution String     // Citation or credit information
+  contentUrl        String // Changed from videoUrl to be more generic
+  lecturerName      String // Michael Sugrue, Dr. Staloff, etc.
+  contentType       String // "video", "podcast", etc.
+  category          String // "introductions", "jerusalem", etc.
+  order             Int // Order within its category
+  embedAllowed      Boolean @default(true)
+  sourceAttribution String // Citation or credit information
 
   // Reflection prompts - specific to this lecture
-  initialPrompt     String     // Prime students before watching
-  masteryPrompt     String     // Deeper reflection after watching
-  evaluationPrompt  String     // Instructions for AI evaluation
+  preLecturePrompt  String // Prime students before watching
+  initialPrompt     String // Initial reflection after watching
+  masteryPrompt     String // Deeper reflection for mastery demonstration
+  evaluationPrompt  String // Instructions for AI evaluation
+  discussionPrompts String // Post-mastery discussion suggestions
 
   // Relationships with philosophical entities
-  entities          PhilosophicalEntity[]
+  entities        PhilosophicalEntity[]
+  entityRelations LectureEntityRelation[] // New relationship with type
 
   // Direct prerequisite relationships
-  prerequisiteFor   LecturePrerequisite[] @relation("PrerequisiteFor")
-  prerequisites     LecturePrerequisite[] @relation("HasPrerequisite")
+  prerequisiteFor LecturePrerequisite[] @relation("PrerequisiteFor")
+  prerequisites   LecturePrerequisite[] @relation("HasPrerequisite")
 
   // User progress/reflections (referenced from other models)
-  progress          Progress[]
-  reflections       Reflection[]
+  progress    Progress[]
+  reflections Reflection[]
 
   // Default timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("lectures")
 }
 
-// New model for lecture prerequisites
-model LecturePrerequisite {
-  id                    String   @id @default(cuid())
-  lectureId             String
-  prerequisiteLectureId String
-  isRequired            Boolean  @default(true)  // Required vs. recommended
-  importanceLevel       Int      @default(3)     // 1-5 scale of importance
+// New model for typed relationships between lectures and entities
+model LectureEntityRelation {
+  id           String @id @default(cuid())
+  lectureId    String
+  entityId     String
+  relationType String // "introduces", "expands", "critiques", "applies", "contextualizes", "compares"
 
   // Relations
-  lecture               Lecture  @relation("HasPrerequisite", fields: [lectureId], references: [id])
-  prerequisiteLecture   Lecture  @relation("PrerequisiteFor", fields: [prerequisiteLectureId], references: [id])
+  lecture Lecture             @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  entity  PhilosophicalEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([lectureId, entityId, relationType])
+  @@map("lecture_entity_relations")
+}
+
+// New model for lecture prerequisites
+model LecturePrerequisite {
+  id                    String  @id @default(cuid())
+  lectureId             String
+  prerequisiteLectureId String
+  isRequired            Boolean @default(true) // Required vs. recommended
+  importanceLevel       Int     @default(3) // 1-5 scale of importance
+
+  // Relations
+  lecture             Lecture @relation("HasPrerequisite", fields: [lectureId], references: [id])
+  prerequisiteLecture Lecture @relation("PrerequisiteFor", fields: [prerequisiteLectureId], references: [id])
 
   @@unique([lectureId, prerequisiteLectureId])
   @@map("lecture_prerequisites")
 }
 
-// User Progress model
+// User Progress model (updated with more states)
 model Progress {
   id          String    @id @default(cuid())
   userId      String
   lectureId   String
-  status      String    @default("NOT_STARTED") // Instead of enum
+  status      String    @default("LOCKED") // "LOCKED", "READY", "STARTED", "WATCHED", "INITIAL_REFLECTION", "MASTERY_TESTING", "MASTERED"
   lastViewed  DateTime?
   completedAt DateTime?
   decayFactor Float     @default(1.0) // Knowledge decay factor
@@ -159,46 +178,29 @@ model Progress {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lecture    Lecture   @relation(fields: [lectureId], references: [id])
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture Lecture @relation(fields: [lectureId], references: [id])
 
   @@unique([userId, lectureId])
   @@map("progress")
 }
 
-// Reflection model
+// Reflection model (updated)
 model Reflection {
-  id            String   @id @default(cuid())
-  userId        String
-  lectureId     String
-  promptId      String
-  content       String   // Removed @db.Text
-  aiEvaluation  String?  // Using String instead of Json, will store serialized JSON
-  score         Float?   // Optional scoring
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  lectureId    String
+  promptType   String // "pre-lecture", "initial", "mastery", "discussion"
+  content      String
+  aiEvaluation String? // Using String instead of Json, will store serialized JSON
+  status       String   @default("SUBMITTED") // "SUBMITTED", "EVALUATED", "MASTERY_ACHIEVED"
+  score        Float? // Optional scoring
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lecture   Lecture          @relation(fields: [lectureId], references: [id], onDelete: Cascade)
-  prompt    ReflectionPrompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
 
   @@map("reflections")
-}
-
-// ReflectionPrompt model
-model ReflectionPrompt {
-  id          String   @id @default(cuid())
-  conceptId   String
-  promptText  String
-  promptType  String   // Instead of enum
-  difficulty  Int      @default(1) // 1-5 scale
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  concept     PhilosophicalEntity @relation(fields: [conceptId], references: [id], onDelete: Cascade)
-  reflections Reflection[]
-
-  @@map("reflection_prompts")
 }
