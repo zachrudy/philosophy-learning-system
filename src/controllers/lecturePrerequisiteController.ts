@@ -11,6 +11,8 @@ import {
   LectureWithRelations,
   UserWithProgress
 } from '@/types/models';
+import { validatePrerequisite } from '@/lib/validation/prerequisiteValidation';
+
 
 /**
  * Controller for managing lecture prerequisites
@@ -48,6 +50,7 @@ export class LecturePrerequisiteController {
           { importanceLevel: 'desc' }
         ]
       });
+
 
       return {
         success: true,
@@ -105,19 +108,32 @@ export class LecturePrerequisiteController {
   }
 
   /**
+   * Validates prerequisite data
+   */
+  static validatePrerequisiteData(data: Partial<LecturePrerequisiteDTO>, isUpdate = false): {
+    valid: boolean;
+    errors: string[];
+    sanitizedData?: Partial<LecturePrerequisiteDTO>;
+  } {
+    return validatePrerequisite(data, isUpdate);
+  }
+
+  /**
    * Add a prerequisite to a lecture
    */
   static async addPrerequisite(data: LecturePrerequisiteDTO) {
     try {
-      const { lectureId, prerequisiteLectureId, isRequired = true, importanceLevel = 3 } = data;
-
-      // Validate IDs
-      if (!lectureId || !prerequisiteLectureId) {
+      // Validate the prerequisite data
+      const validation = this.validatePrerequisiteData(data);
+      if (!validation.valid) {
         return {
           success: false,
-          error: 'Lecture ID and prerequisite lecture ID are required'
+          error: `Validation failed: ${validation.errors.join(', ')}`
         };
       }
+
+      // Use the sanitized data
+      const { lectureId, prerequisiteLectureId, isRequired = true, importanceLevel = 3 } = validation.sanitizedData!;
 
       // Check if both lectures exist
       const [lecture, prerequisiteLecture] = await Promise.all([
@@ -139,14 +155,6 @@ export class LecturePrerequisiteController {
         };
       }
 
-      // Check if this would create a self-reference
-      if (lectureId === prerequisiteLectureId) {
-        return {
-          success: false,
-          error: 'A lecture cannot be a prerequisite of itself'
-        };
-      }
-
       // Check if this prerequisite already exists
       const existingPrerequisite = await prisma.lecturePrerequisite.findFirst({
         where: {
@@ -163,17 +171,21 @@ export class LecturePrerequisiteController {
         };
       }
 
-      // Check for circular dependencies
+      // Enhance circular dependency checking with additional validation
       const circularDependency = await this.checkCircularDependencies(lectureId, prerequisiteLectureId);
       if (circularDependency.hasCycle) {
+        // Provide more detailed error information about the cycle
         return {
           success: false,
           error: 'Adding this prerequisite would create a circular dependency',
-          path: circularDependency.path
+          cycleDetails: {
+            path: circularDependency.path,
+            description: `Adding this prerequisite would create a dependency cycle: ${circularDependency.path.join(' -> ')}`
+          }
         };
       }
 
-      // Create the prerequisite
+      // Create the prerequisite with validated data
       const prerequisite = await prisma.lecturePrerequisite.create({
         data: {
           lectureId,
@@ -208,6 +220,18 @@ export class LecturePrerequisiteController {
     importanceLevel?: number;
   }) {
     try {
+      // Validate the update data
+      const validation = this.validatePrerequisiteData(data, true);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: `Validation failed: ${validation.errors.join(', ')}`
+        };
+      }
+
+      // Use the sanitized data
+      const sanitizedData = validation.sanitizedData!;
+
       // Check if prerequisite exists
       const prerequisite = await prisma.lecturePrerequisite.findUnique({
         where: { id }
@@ -220,18 +244,10 @@ export class LecturePrerequisiteController {
         };
       }
 
-      // Validate importance level
-      if (data.importanceLevel !== undefined && (data.importanceLevel < 1 || data.importanceLevel > 5)) {
-        return {
-          success: false,
-          error: 'Importance level must be between 1 and 5'
-        };
-      }
-
-      // Update the prerequisite
+      // Update the prerequisite with validated data
       const updatedPrerequisite = await prisma.lecturePrerequisite.update({
         where: { id },
-        data,
+        data: sanitizedData,
         include: {
           lecture: true,
           prerequisiteLecture: true
@@ -288,9 +304,37 @@ export class LecturePrerequisiteController {
 
   /**
    * Check if a student has completed the prerequisites for a lecture
+   * with enhanced validation
    */
   static async checkPrerequisitesSatisfied(userId: string, lectureId: string) {
     try {
+      // Validate inputs
+      if (!userId) {
+        return {
+          success: false,
+          error: 'User ID is required'
+        };
+      }
+
+      if (!lectureId) {
+        return {
+          success: false,
+          error: 'Lecture ID is required'
+        };
+      }
+
+      // Check if user exists
+      const user = await prisma.user.findUnique({
+        where: { id: userId }
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          error: 'User not found'
+        };
+      }
+
       // Check if lecture exists
       const lecture = await prisma.lecture.findUnique({
         where: { id: lectureId }
@@ -547,10 +591,10 @@ export class LecturePrerequisiteController {
         data: filteredResults
       };
     } catch (error) {
-      console.error('Error getting available lectures:', error);
+      console.error('Error checking prerequisites:', error);
       return {
         success: false,
-        error: `Failed to get available lectures: ${error.message}`
+        error: `Failed to check prerequisites: ${error.message}`
       };
     }
   }
@@ -624,15 +668,30 @@ export class LecturePrerequisiteController {
   }
 
   /**
-   * Check for circular dependencies before creating a prerequisite
+   * Enhanced check for circular dependencies before creating a prerequisite
+   * with additional validation and more detailed path information
    */
   static async checkCircularDependencies(lectureId: string, prerequisiteId: string): Promise<{
     hasCycle: boolean;
     path: string[];
+    lectureNames?: Record<string, string>; // Map of lecture IDs to names for easier debugging
   }> {
-    // Initialize visited and path arrays for cycle detection
+    // Initialize data structures for cycle detection
     const visited = new Set<string>();
     const path: string[] = [];
+    const lectureNames: Record<string, string> = {};
+
+    // Function to get lecture name and cache it
+    const getLectureName = async (id: string): Promise<string> => {
+      if (!lectureNames[id]) {
+        const lecture = await prisma.lecture.findUnique({
+          where: { id },
+          select: { title: true }
+        });
+        lectureNames[id] = lecture?.title || `Unknown Lecture (${id})`;
+      }
+      return lectureNames[id];
+    };
 
     // Function to perform depth-first search
     const dfs = async (currentId: string, target: string): Promise<boolean> => {
@@ -646,6 +705,9 @@ export class LecturePrerequisiteController {
       visited.add(currentId);
       path.push(currentId);
 
+      // Get lecture name for improved debug info
+      await getLectureName(currentId);
+
       // Get all prerequisites of the current lecture
       const prerequisites = await prisma.lecturePrerequisite.findMany({
         where: { lectureId: currentId },
@@ -656,11 +718,21 @@ export class LecturePrerequisiteController {
       for (const prereq of prerequisites) {
         const prereqId = prereq.prerequisiteLectureId;
 
+        // Get lecture name
+        await getLectureName(prereqId);
+
         // If we haven't visited this node yet
         if (!visited.has(prereqId)) {
           if (await dfs(prereqId, target)) {
             return true; // Cycle found
           }
+        }
+        // If we have visited this node and it's in our current path, we found a cycle
+        // (This helps detect other types of cycles beyond just the target)
+        else if (path.includes(prereqId)) {
+          // We've found a different cycle - add this info to the result
+          console.warn(`Found additional cycle involving ${prereqId}`);
+          return true;
         }
       }
 
@@ -676,28 +748,18 @@ export class LecturePrerequisiteController {
     // If a cycle was found, add the target lecture to close the loop
     if (hasCycle) {
       path.push(lectureId);
+      await getLectureName(lectureId);
     }
 
-    // Get lecture names for all IDs in the path
-    const pathWithNames = [];
-    if (hasCycle) {
-      for (const id of path) {
-        const lecture = await prisma.lecture.findUnique({
-          where: { id },
-          select: { title: true }
-        });
-        pathWithNames.push({
-          id,
-          title: lecture?.title || 'Unknown Lecture'
-        });
-      }
-    }
+    // Convert path IDs to lecture names for better debugging
+    const pathWithNames = hasCycle
+      ? path.map(id => `${lectureNames[id] || 'Unknown'} (${id})`)
+      : [];
 
     return {
       hasCycle,
-      path: hasCycle
-        ? pathWithNames.map(p => `${p.title} (${p.id})`)
-        : []
+      path: pathWithNames,
+      lectureNames: hasCycle ? lectureNames : undefined
     };
   }
 }
