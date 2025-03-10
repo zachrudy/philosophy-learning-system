@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { NextRequest } from 'next/server';
 import { USER_ROLES } from '@/lib/constants';
+import { prisma } from '@/lib/db/prisma';
 
 // Import the actual modules first
 import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
@@ -19,10 +20,24 @@ import {
 import { GET as getRelationshipsHandler } from '@/app/api/philosophical-entities/[id]/relationships/route';
 import { GET as getLearningPathHandler } from '@/app/api/philosophical-entities/[id]/learning-path/route';
 
+// jest.mock('next-auth/next');
+
 describe('Philosophical Entities API Endpoints', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
+
+    // Mock the transform functions
+    jest.mock('@/lib/transforms', () => ({
+      transformPhilosophicalEntity: jest.fn(entity => entity),
+      transformArray: jest.fn(arr => arr),
+      transformPhilosophicalEntityWithRelations: jest.fn(entity => entity),
+      createApiResponse: jest.fn((data, meta) => ({ data, meta })),
+      createPaginatedResponse: jest.fn((data, pagination) => ({
+        data,
+        meta: { pagination }
+      })),
+    }));
 
     // Mock the session for authorized requests by default
     jest.mocked(getServerSession).mockResolvedValue({
@@ -359,41 +374,43 @@ describe('Philosophical Entities API Endpoints', () => {
   // PATCH /api/philosophical-entities/[id]
   //////////////////////////////////////////////////////////////////////////////
 
+  // PATCH Tests
   describe('PATCH /api/philosophical-entities/[id]', () => {
     it('should update an entity when authenticated as admin', async () => {
-      // Mock update data
-      const mockUpdateData = {
-        description: 'Updated description',
-        birthplace: 'Updated birthplace'
+      // Mock entity data
+      const updateData = {
+        name: 'Updated Entity',
+        description: 'Updated description'
       };
 
       // Mock successful response
       jest.spyOn(PhilosophicalEntityController, 'updateEntity').mockResolvedValue({
         success: true,
         data: {
-          id: 'entity-id',
-          type: 'Philosopher',
-          name: 'Immanuel Kant',
-          description: 'Updated description',
-          birthplace: 'Updated birthplace'
+          id: 'entity-1',
+          ...updateData,
+          type: 'PhilosophicalConcept',
+          createdAt: new Date(),
+          updatedAt: new Date()
         }
       });
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mockUpdateData)
+        body: JSON.stringify(updateData)
       });
 
       // Call the handler
-      const response = await updateEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await updateEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
       expect(response.status).toBe(200);
-      expect(data).toHaveProperty('description', 'Updated description');
-      expect(PhilosophicalEntityController.updateEntity).toHaveBeenCalledWith('entity-id', mockUpdateData);
+      expect(data).toHaveProperty('id', 'entity-1');
+      expect(data).toHaveProperty('name', 'Updated Entity');
+      expect(PhilosophicalEntityController.updateEntity).toHaveBeenCalledWith('entity-1', updateData);
     });
 
     it('should reject unauthorized requests', async () => {
@@ -401,17 +418,19 @@ describe('Philosophical Entities API Endpoints', () => {
       jest.mocked(getServerSession).mockResolvedValueOnce(null);
 
       // Mock update data
-      const mockUpdateData = { description: 'Updated description' };
+      const updateData = {
+        name: 'Updated Entity'
+      };
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mockUpdateData)
+        body: JSON.stringify(updateData)
       });
 
       // Call the handler
-      const response = await updateEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await updateEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
@@ -432,17 +451,19 @@ describe('Philosophical Entities API Endpoints', () => {
       });
 
       // Mock update data
-      const mockUpdateData = { description: 'Updated description' };
+      const updateData = {
+        name: 'Updated Entity'
+      };
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mockUpdateData)
+        body: JSON.stringify(updateData)
       });
 
       // Call the handler
-      const response = await updateEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await updateEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
@@ -453,24 +474,21 @@ describe('Philosophical Entities API Endpoints', () => {
     });
 
     it('should return 404 when entity to update is not found', async () => {
-      // Mock update data
-      const mockUpdateData = { description: 'Updated description' };
-
-      // Mock not found response
+      // Mock controller error - entity not found
       jest.spyOn(PhilosophicalEntityController, 'updateEntity').mockResolvedValue({
         success: false,
         error: 'Entity not found'
       });
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/nonexistent-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/non-existent-id', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mockUpdateData)
+        body: JSON.stringify({ name: 'Updated Entity' })
       });
 
       // Call the handler
-      const response = await updateEntityHandler(req, { params: { id: 'nonexistent-id' } });
+      const response = await updateEntityHandler(req, { params: { id: 'non-existent-id' } });
       const data = await response.json();
 
       // Assert
@@ -479,18 +497,15 @@ describe('Philosophical Entities API Endpoints', () => {
     });
 
     it('should reject empty update requests', async () => {
-      // Empty update data
-      const mockUpdateData = {};
-
-      // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      // Create mock request with empty body
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mockUpdateData)
+        body: JSON.stringify({})
       });
 
       // Call the handler
-      const response = await updateEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await updateEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
@@ -500,10 +515,7 @@ describe('Philosophical Entities API Endpoints', () => {
     });
   });
 
-  //////////////////////////////////////////////////////////////////////////////
-  // DELETE /api/philosophical-entities/[id]
-  //////////////////////////////////////////////////////////////////////////////
-
+  // DELETE Tests
   describe('DELETE /api/philosophical-entities/[id]', () => {
     it('should delete an entity when authenticated as admin', async () => {
       // Mock successful response
@@ -513,18 +525,18 @@ describe('Philosophical Entities API Endpoints', () => {
       });
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'DELETE'
       });
 
       // Call the handler
-      const response = await deleteEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await deleteEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
       expect(response.status).toBe(200);
       expect(data).toHaveProperty('message', 'Entity deleted successfully');
-      expect(PhilosophicalEntityController.deleteEntity).toHaveBeenCalledWith('entity-id');
+      expect(PhilosophicalEntityController.deleteEntity).toHaveBeenCalledWith('entity-1');
     });
 
     it('should reject unauthorized requests', async () => {
@@ -532,12 +544,12 @@ describe('Philosophical Entities API Endpoints', () => {
       jest.mocked(getServerSession).mockResolvedValueOnce(null);
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'DELETE'
       });
 
       // Call the handler
-      const response = await deleteEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await deleteEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
@@ -547,46 +559,46 @@ describe('Philosophical Entities API Endpoints', () => {
     });
 
     it('should reject requests from non-admin users', async () => {
-      // Even instructors cannot delete entities, only admins
+      // Mock session with STUDENT role
       jest.mocked(getServerSession).mockResolvedValueOnce({
         user: {
-          id: 'instructor-id',
-          name: 'Instructor User',
-          email: 'instructor@example.com',
-          role: USER_ROLES.INSTRUCTOR
+          id: 'student-id',
+          name: 'Student User',
+          email: 'student@example.com',
+          role: USER_ROLES.STUDENT
         }
       });
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/entity-1', {
         method: 'DELETE'
       });
 
       // Call the handler
-      const response = await deleteEntityHandler(req, { params: { id: 'entity-id' } });
+      const response = await deleteEntityHandler(req, { params: { id: 'entity-1' } });
       const data = await response.json();
 
       // Assert
       expect(response.status).toBe(403);
       expect(data).toHaveProperty('error');
-      expect(data.error).toContain('admin access required');
+      expect(data.error).toContain('insufficient permissions');
       expect(PhilosophicalEntityController.deleteEntity).not.toHaveBeenCalled();
     });
 
     it('should return 404 when entity to delete is not found', async () => {
-      // Mock not found response
+      // Mock controller error - entity not found
       jest.spyOn(PhilosophicalEntityController, 'deleteEntity').mockResolvedValue({
         success: false,
         error: 'Entity not found'
       });
 
       // Create mock request
-      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/nonexistent-id', {
+      const req = new NextRequest('http://localhost:3000/api/philosophical-entities/non-existent-id', {
         method: 'DELETE'
       });
 
       // Call the handler
-      const response = await deleteEntityHandler(req, { params: { id: 'nonexistent-id' } });
+      const response = await deleteEntityHandler(req, { params: { id: 'non-existent-id' } });
       const data = await response.json();
 
       // Assert

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
+import { prisma } from '@/lib/db/prisma';
 
 
 // GET /api/philosophical-entities

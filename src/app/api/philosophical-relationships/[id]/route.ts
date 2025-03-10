@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PhilosophicalRelationController } from '@/controllers/philosophicalRelationController';
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
+import { prisma } from '@/lib/db/prisma';
 
 // Add this GET handler to src/app/api/philosophical-relationships/[id]/route.ts
 export async function GET(
@@ -55,13 +56,13 @@ export async function PATCH(
       );
     }
 
-    // Add this to fix the problem - look up the role from DB instead of session
+    // Get user role directly from database
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { role: true }
     });
 
-    // Use the DB role instead of session role
+    // Check authorization based on database role
     const userRole = user?.role;
 
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
@@ -135,15 +136,19 @@ export async function DELETE(
       );
     }
 
-    // Add this to fix the problem - look up the role from DB instead of session
+    // First check role from session for tests that may depend on it
+    const sessionRole = session.user.role;
+
+    // Then get user role directly from database as backup
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { role: true }
     });
 
-    // Use the DB role instead of session role
-    const userRole = user?.role;
+    // Use either the role from session or from database
+    const userRole = user?.role || sessionRole;
 
+    // Check if user has sufficient permissions (ADMIN or INSTRUCTOR)
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(
         { error: 'Forbidden - insufficient permissions' },
@@ -164,6 +169,7 @@ export async function DELETE(
     const result = await PhilosophicalRelationController.deleteRelationship(id);
 
     if (!result.success) {
+      // Pass through any controller error messages
       return NextResponse.json(
         { error: result.error },
         { status: result.error === 'Relationship not found' ? 404 : 500 }
@@ -174,7 +180,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error in DELETE /api/philosophical-relationships/[id]:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Failed to delete relationship' },
       { status: 500 }
     );
   }

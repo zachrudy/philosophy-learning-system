@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PhilosophicalEntityController } from '@/controllers/philosophicalEntityController';
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
+import { prisma } from '@/lib/db/prisma';
 
 // GET /api/philosophical-entities/:id
 export async function GET(
@@ -72,13 +73,13 @@ export async function PATCH(
       );
     }
 
-    // Add this to fix the problem - look up the role from DB instead of session
+    // Look up the user's role from the database
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { role: true }
     });
 
-    // Use the DB role instead of session role
+    // Check authorization based on the role from the database
     const userRole = user?.role;
 
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
@@ -152,22 +153,22 @@ export async function DELETE(
       );
     }
 
-    // Add this to fix the problem - look up the role from DB instead of session
+    // Look up the user's role from the database
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { role: true }
     });
 
-    // Use the DB role instead of session role
+    // Check authorization based on the role from the database
     const userRole = user?.role;
 
-    if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
+    if (userRole !== USER_ROLES.ADMIN) {
       return NextResponse.json(
         { error: 'Forbidden - insufficient permissions' },
         { status: 403 }
       );
     }
-    
+
     const { id } = params;
 
     if (!id) {

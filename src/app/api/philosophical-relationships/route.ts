@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PhilosophicalRelationController } from '@/controllers/philosophicalRelationController';
 import { getServerSession } from 'next-auth/next';
 import { USER_ROLES } from '@/lib/constants';
+import { prisma } from '@/lib/db/prisma';
 
 // POST /api/philosophical-relationships
 export async function POST(request: NextRequest) {
@@ -25,7 +26,6 @@ export async function POST(request: NextRequest) {
 
     // Check authorization based on database role
     const userRole = user?.role;
-    console.log('User role from DB lookup:', userRole);
 
     if (userRole !== USER_ROLES.ADMIN && userRole !== USER_ROLES.INSTRUCTOR) {
       return NextResponse.json(

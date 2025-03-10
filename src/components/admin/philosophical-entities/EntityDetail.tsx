@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/lib/utils';
+import { deserializeRelationTypes } from '@/lib/constants';
 
 // Define the entity type from our models
 type PhilosophicalEntity = {
@@ -486,7 +487,9 @@ const EntityDetail: React.FC<EntityDetailProps> = ({ entityId }) => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-wrap gap-1">
-                        {relationship.relationTypes.map((type, idx) => (
+                      {(Array.isArray(relationship.relationTypes)
+                        ? relationship.relationTypes
+                        : deserializeRelationTypes(relationship.relationTypes)).map((type, idx) => (
                           <span
                             key={idx}
                             className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800"
