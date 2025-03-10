@@ -13,7 +13,7 @@ import {
 import { LECTURE_ENTITY_RELATION_TYPES } from '@/lib/constants';
 import { sampleLectures } from '../../fixtures/lecture-fixtures';
 
-// This is required to properly mock deserializeJsonFromDb
+// Mock the constants module to control the deserialization behavior
 jest.mock('@/lib/constants', () => {
   const originalModule = jest.requireActual('@/lib/constants');
   return {
@@ -104,6 +104,19 @@ describe('Lecture Transform Functions', () => {
           }
         ]
       };
+
+      // Set up the mock for deserializeJsonFromDb
+      const { deserializeJsonFromDb } = require('@/lib/constants');
+      deserializeJsonFromDb.mockImplementation((jsonString) => {
+        if (jsonString === JSON.stringify(['Forms', 'Republic'])) {
+          return ['Forms', 'Republic'];
+        }
+        try {
+          return JSON.parse(jsonString);
+        } catch (error) {
+          return null;
+        }
+      });
 
       // Act
       const result = transformLectureWithRelations(lecture);

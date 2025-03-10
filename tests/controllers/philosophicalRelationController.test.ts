@@ -207,12 +207,15 @@ describe('PhilosophicalRelationController', () => {
       expect(result.success).toBe(true);
       expect(result.data.sourceEntityId).toBe(relationData.sourceEntityId);
       expect(result.data.targetEntityId).toBe(relationData.targetEntityId);
-      expect(mockPrisma.philosophicalRelation.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          sourceEntityId: 'philosopher-1',
-          targetEntityId: 'concept-1'
+      expect(mockPrisma.philosophicalRelation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sourceEntityId: 'philosopher-1',
+            targetEntityId: 'concept-1'
+          }),
+          include: expect.any(Object)
         })
-      });
+      );
     });
 
     it('should not create a relationship if validation fails', async () => {
@@ -286,13 +289,16 @@ describe('PhilosophicalRelationController', () => {
       expect(result.success).toBe(true);
       expect(result.data.description).toBe(updateData.description);
       expect(result.data.importance).toBe(updateData.importance);
-      expect(mockPrisma.philosophicalRelation.update).toHaveBeenCalledWith({
-        where: { id: relationId },
-        data: expect.objectContaining({
-          description: updateData.description,
-          importance: updateData.importance
+      expect(mockPrisma.philosophicalRelation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: relationId },
+          data: expect.objectContaining({
+            description: updateData.description,
+            importance: updateData.importance
+          }),
+          include: expect.any(Object)
         })
-      });
+      );
     });
 
     it('should return error if relationship to update is not found', async () => {
