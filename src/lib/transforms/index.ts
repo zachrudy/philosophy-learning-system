@@ -9,3 +9,6 @@ export * from './entityTransforms';
 
 // Lecture transforms
 export * from './lectureTransforms';
+
+// Reflection transforms
+export * from './reflectionTransforms';

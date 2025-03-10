@@ -17,6 +17,16 @@ import {
   LecturePrerequisiteDTO
 } from '@/types/models';
 import { validateLecture } from '@/lib/validation/lectureValidation';
+// Import the transform functions
+import {
+  transformLecture,
+  transformLectureWithRelations,
+  createApiResponse,
+  createPaginatedResponse,
+  transformArray,
+  createTransformedResponse,
+  createTransformedPaginatedResponse
+} from '@/lib/transforms';
 
 /**
  * Controller for managing lectures
@@ -114,15 +124,18 @@ export class LectureController {
         ]
       });
 
+      // Transform the results and create a paginated response
+      const paginationMeta = {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      };
+
       return {
         success: true,
-        data: lectures,
-        pagination: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit)
-        }
+        data: transformArray(lectures, transformLectureWithRelations),
+        pagination: paginationMeta
       };
     } catch (error) {
       console.error('Error fetching lectures:', error);
@@ -198,9 +211,12 @@ export class LectureController {
         };
       }
 
+      // Transform the lecture data
+      const transformedLecture = transformLectureWithRelations(lecture);
+
       return {
         success: true,
-        data: lecture
+        data: transformedLecture
       };
     } catch (error) {
       console.error('Error fetching lecture:', error);
@@ -215,19 +231,19 @@ export class LectureController {
    * Create a new lecture
    */
   static async createLecture(data: CreateLectureDTO) {
-   try {
-     // Validate and sanitize the data
-     const validation = this.validateLectureData(data);
+    try {
+      // Validate and sanitize the data
+      const validation = this.validateLectureData(data);
 
-     if (!validation.valid) {
-       return {
-         success: false,
-         error: `Validation failed: ${validation.errors.join(', ')}`
-       };
-     }
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: `Validation failed: ${validation.errors.join(', ')}`
+        };
+      }
 
-     // Use the sanitized data
-     const sanitizedData = validation.sanitizedData!;
+      // Use the sanitized data
+      const sanitizedData = validation.sanitizedData!;
 
       // The prompt fields can have default placeholders if not provided (for CSV import workflow)
       const promptDefaults = {
@@ -346,9 +362,12 @@ export class LectureController {
         });
       });
 
+      // Transform the result
+      const transformedResult = transformLectureWithRelations(result);
+
       return {
         success: true,
-        data: result
+        data: transformedResult
       };
     } catch (error) {
       console.error('Error creating lecture:', error);
@@ -363,31 +382,31 @@ export class LectureController {
    * Update an existing lecture
    */
   static async updateLecture(id: string, data: UpdateLectureDTO) {
-   try {
-     // First check if lecture exists
-     const existingLecture = await prisma.lecture.findUnique({
-       where: { id }
-     });
+    try {
+      // First check if lecture exists
+      const existingLecture = await prisma.lecture.findUnique({
+        where: { id }
+      });
 
-     if (!existingLecture) {
-       return {
-         success: false,
-         error: 'Lecture not found'
-       };
-     }
+      if (!existingLecture) {
+        return {
+          success: false,
+          error: 'Lecture not found'
+        };
+      }
 
-     // Validate and sanitize the data
-     const validation = this.validateLectureData(data, true);
+      // Validate and sanitize the data
+      const validation = this.validateLectureData(data, true);
 
-     if (!validation.valid) {
-       return {
-         success: false,
-         error: `Validation failed: ${validation.errors.join(', ')}`
-       };
-     }
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: `Validation failed: ${validation.errors.join(', ')}`
+        };
+      }
 
-     // Use the sanitized data
-     const sanitizedData = validation.sanitizedData!;
+      // Use the sanitized data
+      const sanitizedData = validation.sanitizedData!;
 
       // Extract entity relationships and prerequisites for separate handling
       const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
@@ -440,7 +459,7 @@ export class LectureController {
           }
         }
 
-        // Handle prerequisites if provided - this will be simplified and moved to the prerequisite controller
+        // Handle prerequisites if provided
         if (prerequisiteIds !== undefined) {
           // First delete all current prerequisites
           await tx.lecturePrerequisite.deleteMany({
@@ -486,9 +505,12 @@ export class LectureController {
         });
       });
 
+      // Transform the result
+      const transformedResult = transformLectureWithRelations(result);
+
       return {
         success: true,
-        data: result
+        data: transformedResult
       };
     } catch (error) {
       console.error('Error updating lecture:', error);
@@ -566,7 +588,8 @@ export class LectureController {
         success: false,
         error: `Failed to delete lecture: ${error.message}`
       };
-    }  }
+    }
+  }
 
   /**
    * Get all entity relationships for a lecture
@@ -593,9 +616,13 @@ export class LectureController {
         }
       });
 
+      // Transform the entity relations
+      const transformedRelations = transformArray(entityRelations,
+                                    (relation) => transformLectureEntityRelation(relation));
+
       return {
         success: true,
-        data: entityRelations
+        data: transformedRelations
       };
     } catch (error) {
       console.error('Error fetching lecture entity relations:', error);

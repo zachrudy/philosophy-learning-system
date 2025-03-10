@@ -6,8 +6,21 @@ import {
   CreatePhilosophicalEntityDTO,
   PhilosophicalEntityWithRelations
 } from '@/types/models';
+
 // Import the relationship controller for entity-relation operations
 import { PhilosophicalRelationController } from './philosophicalRelationController';
+
+// Import transformation functions
+import {
+  transformPhilosophicalEntity,
+  transformPhilosophicalEntityWithRelations,
+  transformRelationshipWithDirection,
+  createApiResponse,
+  createPaginatedResponse,
+  transformArray,
+  createTransformedResponse,
+  createTransformedPaginatedResponse
+} from '@/lib/transforms';
 
 /**
  * Controller for managing philosophical entities
@@ -55,18 +68,18 @@ export class PhilosophicalEntityController {
         }
       });
 
-      // Deserialize any JSON fields in entities
-      const deserializedEntities = entities.map(entity => this.deserializeEntityData(entity));
+      // Transform the entities and create a paginated response
+      const paginationMeta = {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      };
 
       return {
         success: true,
-        data: deserializedEntities,
-        pagination: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit)
-        }
+        data: transformArray(entities, transformPhilosophicalEntity),
+        pagination: paginationMeta
       };
     } catch (error) {
       console.error('Error fetching entities:', error);
@@ -122,13 +135,12 @@ export class PhilosophicalEntityController {
         data: sanitizedData
       });
 
-      // Deserialize JSON fields for response
-      const deserializedEntity = this.deserializeEntityData(entity);
+      // Transform the entity before returning
+      const transformedEntity = transformPhilosophicalEntity(entity);
 
-      // Return the created entity
       return {
         success: true,
-        data: deserializedEntity
+        data: transformedEntity
       };
     } catch (error) {
       console.error('Error creating entity:', error);
@@ -174,20 +186,19 @@ export class PhilosophicalEntityController {
         };
       }
 
-      // Deserialize JSON fields
-      const deserializedEntity = this.deserializeEntityData(entity);
-
       // Get relationships using the dedicated controller
       const relationshipsResult = await PhilosophicalRelationController.getRelationshipsByEntityId(id);
 
-      // Transform the data to include relationships
-      const { sourceRelations, targetRelations, ...entityData } = deserializedEntity;
+      // Transform the entity with its relationships
+      const transformedEntity = transformPhilosophicalEntityWithRelations(entity);
 
       return {
         success: true,
         data: {
-          ...entityData,
-          relationships: relationshipsResult.success ? relationshipsResult.data : []
+          ...transformedEntity,
+          relationships: relationshipsResult.success
+            ? transformArray(relationshipsResult.data, transformRelationshipWithDirection)
+            : []
         }
       };
     } catch (error) {
@@ -223,7 +234,7 @@ export class PhilosophicalEntityController {
       if ('relationships' in processedData) {
         delete processedData.relationships;
       }
-      
+
       // Serialize keyTerms array if provided
       if (Array.isArray(processedData.keyTerms)) {
         processedData.keyTerms = serializeJsonForDb(processedData.keyTerms);
@@ -238,12 +249,12 @@ export class PhilosophicalEntityController {
         data: sanitizedData
       });
 
-      // Deserialize JSON fields for response
-      const deserializedEntity = this.deserializeEntityData(entity);
+      // Transform the entity before returning
+      const transformedEntity = transformPhilosophicalEntity(entity);
 
       return {
         success: true,
-        data: deserializedEntity
+        data: transformedEntity
       };
     } catch (error) {
       console.error('Error updating entity:', error);
@@ -306,16 +317,16 @@ export class PhilosophicalEntityController {
         }
       });
 
-      // Deserialize for the response
+      // Transform the prerequisites before returning
       const prerequisites = relations.map(r => ({
         ...r.sourceEntity,
-        // Deserialize any JSON fields as needed
+        // Transform each entity with proper deserialization
         keyTerms: deserializeJsonFromDb(r.sourceEntity.keyTerms)
       }));
 
       return {
         success: true,
-        data: prerequisites
+        data: transformArray(prerequisites, transformPhilosophicalEntity)
       };
     } catch (error) {
       console.error('Error fetching prerequisites:', error);
@@ -429,15 +440,14 @@ export class PhilosophicalEntityController {
           where: { id }
         });
         if (concept) {
-          // Deserialize JSON fields
-          const deserializedConcept = this.deserializeEntityData(concept);
-          concepts.push(deserializedConcept);
+          concepts.push(concept);
         }
       }
 
+      // Transform the concepts before returning
       return {
         success: true,
-        data: concepts
+        data: transformArray(concepts, transformPhilosophicalEntity)
       };
     } catch (error) {
       console.error('Error creating learning path:', error);

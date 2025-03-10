@@ -13,6 +13,17 @@ import {
 } from '@/types/models';
 import { validatePrerequisite } from '@/lib/validation/prerequisiteValidation';
 
+// Import transformation functions
+import {
+  transformLecture,
+  transformLectureWithRelations,
+  transformLecturePrerequisite,
+  transformPrerequisiteCheckResult,
+  transformLectureAvailability,
+  createApiResponse,
+  transformArray,
+  createTransformedResponse
+} from '@/lib/transforms';
 
 /**
  * Controller for managing lecture prerequisites
@@ -51,10 +62,12 @@ export class LecturePrerequisiteController {
         ]
       });
 
+      // Transform the prerequisites
+      const transformedPrerequisites = transformArray(prerequisites, transformLecturePrerequisite);
 
       return {
         success: true,
-        data: prerequisites
+        data: transformedPrerequisites
       };
     } catch (error) {
       console.error('Error fetching prerequisites:', error);
@@ -94,9 +107,18 @@ export class LecturePrerequisiteController {
         }
       });
 
+      // Transform the dependent lectures
+      const transformedDependentLectures = transformArray(dependentLectures, (prereq) => {
+        const transformed = { ...prereq };
+        if (prereq.lecture) {
+          transformed.lecture = transformLecture(prereq.lecture);
+        }
+        return transformed;
+      });
+
       return {
         success: true,
-        data: dependentLectures
+        data: transformedDependentLectures
       };
     } catch (error) {
       console.error('Error fetching dependent lectures:', error);
@@ -199,9 +221,16 @@ export class LecturePrerequisiteController {
         }
       });
 
+      // Transform the prerequisite with lectures
+      const transformedPrerequisite = {
+        ...prerequisite,
+        lecture: transformLecture(prerequisite.lecture),
+        prerequisiteLecture: transformLecture(prerequisite.prerequisiteLecture)
+      };
+
       return {
         success: true,
-        data: prerequisite
+        data: transformedPrerequisite
       };
     } catch (error) {
       console.error('Error adding prerequisite:', error);
@@ -254,9 +283,16 @@ export class LecturePrerequisiteController {
         }
       });
 
+      // Transform the updated prerequisite
+      const transformedPrerequisite = {
+        ...updatedPrerequisite,
+        lecture: transformLecture(updatedPrerequisite.lecture),
+        prerequisiteLecture: transformLecture(updatedPrerequisite.prerequisiteLecture)
+      };
+
       return {
         success: true,
-        data: updatedPrerequisite
+        data: transformedPrerequisite
       };
     } catch (error) {
       console.error('Error updating prerequisite:', error);
@@ -426,17 +462,21 @@ export class LecturePrerequisiteController {
       // Determine if all required prerequisites are satisfied
       const satisfied = missingRequiredPrerequisites.length === 0;
 
+      // Prepare prerequisites result
+      const prerequisitesResult = {
+        satisfied,
+        requiredPrerequisites: transformArray(requiredPrerequisites, transformLecturePrerequisite),
+        completedPrerequisites: transformArray(completedRequiredPrerequisites, transformLecturePrerequisite),
+        missingRequiredPrerequisites: transformArray(missingRequiredPrerequisites, transformLecturePrerequisite),
+        recommendedPrerequisites: transformArray(recommendedPrerequisites, transformLecturePrerequisite),
+        completedRecommendedPrerequisites: transformArray(completedRecommendedPrerequisites, transformLecturePrerequisite),
+        readinessScore
+      };
+
+      // Transform the prerequisites result
       return {
         success: true,
-        data: {
-          satisfied,
-          requiredPrerequisites,
-          completedPrerequisites: completedRequiredPrerequisites,
-          missingRequiredPrerequisites,
-          recommendedPrerequisites,
-          completedRecommendedPrerequisites,
-          readinessScore
-        }
+        data: transformPrerequisiteCheckResult(prerequisitesResult)
       };
     } catch (error) {
       console.error('Error checking prerequisites:', error);
@@ -563,8 +603,9 @@ export class LecturePrerequisiteController {
           status = 'AVAILABLE';
         }
 
+        // Create availability object
         return {
-          lecture,
+          lecture: transformLecture(lecture),
           isCompleted,
           isInProgress,
           isAvailable: allRequiredSatisfied && !isCompleted,
@@ -586,9 +627,10 @@ export class LecturePrerequisiteController {
         filteredResults = results.filter(r => !r.isInProgress);
       }
 
+      // Transform the results
       return {
         success: true,
-        data: filteredResults
+        data: transformArray(filteredResults, transformLectureAvailability)
       };
     } catch (error) {
       console.error('Error checking prerequisites:', error);
@@ -654,9 +696,10 @@ export class LecturePrerequisiteController {
       // Take the requested number of suggestions
       const suggestions = sortedLectures.slice(0, limit);
 
+      // Transform the suggestions
       return {
         success: true,
-        data: suggestions
+        data: transformArray(suggestions, transformLectureAvailability)
       };
     } catch (error) {
       console.error('Error suggesting next lectures:', error);
