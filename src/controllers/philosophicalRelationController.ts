@@ -1,8 +1,18 @@
 // src/controllers/philosophicalRelationController.ts
 
 import { prisma } from '@/lib/db/prisma';
-import { RELATION_TYPES, RelationType, serializeJsonForDb, deserializeJsonFromDb } from '@/lib/constants';
+import { RELATION_TYPES, RelationType, serializeJsonForDb } from '@/lib/constants';
 import { CreatePhilosophicalRelationDTO } from '@/types/models';
+
+// Import transform functions
+import {
+  transformPhilosophicalRelation,
+  transformRelationshipWithDirection,
+  transformPhilosophicalEntity,
+  createApiResponse,
+  transformArray,
+  createTransformedResponse
+} from '@/lib/transforms';
 
 /**
  * Controller for managing relationships between philosophical entities
@@ -33,18 +43,19 @@ export class PhilosophicalRelationController {
 
       // Create the relationship
       const relationship = await prisma.philosophicalRelation.create({
-        data: relationshipData
+        data: relationshipData,
+        include: {
+          sourceEntity: true,
+          targetEntity: true
+        }
       });
 
-      // Deserialize for the response
-      const deserializedRelationship = {
-        ...relationship,
-        relationTypes: deserializeJsonFromDb(relationship.relationTypes)
-      };
+      // Transform the relationship data for the response
+      const transformedRelationship = transformPhilosophicalRelation(relationship);
 
       return {
         success: true,
-        data: deserializedRelationship
+        data: transformedRelationship
       };
     } catch (error) {
       console.error('Error creating relationship:', error);
@@ -112,18 +123,19 @@ export class PhilosophicalRelationController {
       // Update the relationship
       const relationship = await prisma.philosophicalRelation.update({
         where: { id },
-        data: updateData
+        data: updateData,
+        include: {
+          sourceEntity: true,
+          targetEntity: true
+        }
       });
 
-      // Deserialize for the response
-      const deserializedRelationship = {
-        ...relationship,
-        relationTypes: deserializeJsonFromDb(relationship.relationTypes)
-      };
+      // Transform the relationship for the response
+      const transformedRelationship = transformPhilosophicalRelation(relationship);
 
       return {
         success: true,
-        data: deserializedRelationship
+        data: transformedRelationship
       };
     } catch (error) {
       console.error('Error updating relationship:', error);
@@ -206,20 +218,23 @@ export class PhilosophicalRelationController {
         }
       });
 
-      // Deserialize relationTypes and combine into a single array
+      // Process relations to add direction and combine into a single array
+      const sourceRelationsWithDirection = sourceRelations.map(relation => ({
+        ...relation,
+        direction: 'outgoing' as const,
+        relatedEntity: relation.targetEntity
+      }));
+
+      const targetRelationsWithDirection = targetRelations.map(relation => ({
+        ...relation,
+        direction: 'incoming' as const,
+        relatedEntity: relation.sourceEntity
+      }));
+
+      // Combine and transform the relationships using the transform functions
       const relationships = [
-        ...sourceRelations.map(r => ({
-          ...r,
-          relationTypes: deserializeJsonFromDb(r.relationTypes),
-          direction: 'outgoing',
-          relatedEntity: r.targetEntity
-        })),
-        ...targetRelations.map(r => ({
-          ...r,
-          relationTypes: deserializeJsonFromDb(r.relationTypes),
-          direction: 'incoming',
-          relatedEntity: r.sourceEntity
-        }))
+        ...transformArray(sourceRelationsWithDirection, transformRelationshipWithDirection),
+        ...transformArray(targetRelationsWithDirection, transformRelationshipWithDirection)
       ];
 
       return {
@@ -255,15 +270,12 @@ export class PhilosophicalRelationController {
         };
       }
 
-      // Deserialize for the response
-      const deserializedRelationship = {
-        ...relationship,
-        relationTypes: deserializeJsonFromDb(relationship.relationTypes)
-      };
+      // Transform the relationship data
+      const transformedRelationship = transformPhilosophicalRelation(relationship);
 
       return {
         success: true,
-        data: deserializedRelationship
+        data: transformedRelationship
       };
     } catch (error) {
       console.error('Error fetching relationship:', error);
