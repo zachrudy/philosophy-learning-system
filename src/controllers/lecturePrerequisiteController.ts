@@ -21,6 +21,7 @@ import {
   transformPrerequisiteCheckResult,
   transformLectureAvailability,
   createApiResponse,
+  createPaginatedResponse,
   transformArray,
   createTransformedResponse
 } from '@/lib/transforms';

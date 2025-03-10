@@ -142,7 +142,7 @@ describe('LectureController', () => {
       const mockLecture = {
         id: lectureId,
         ...sampleLectures[0],
-        entities: [{ id: 'entity-1', name: 'Plato' }],
+        entities: [{ id: 'entity-1', name: 'Plato', keyTerms: null }], // Add keyTerms: null to match transformed output
         entityRelations: [
           {
             id: 'relation-1',

@@ -89,6 +89,6 @@ export function createTransformedPaginatedResponse<T, R>(
   pagination: PaginationMeta,
   additionalMeta?: any
 ): PaginatedApiResponse<R> {
-  const transformedData = data.map(item => transformFn(item)).filter((item): item is R => item !== null);
+  const transformedData = transformArray(data, transformFn);
   return createPaginatedResponse(transformedData, pagination, additionalMeta);
 }

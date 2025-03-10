@@ -3,6 +3,7 @@ import {
   Lecture,
   LectureWithRelations,
   LectureEntityRelation,
+  LecturePrerequisite,
   Progress,
   Reflection
 } from '@/types/models';
@@ -96,6 +97,28 @@ export function transformLectureEntityRelation(
 }
 
 /**
+ * Transform a Lecture Prerequisite from database model to API response
+ */
+export function transformLecturePrerequisite(
+  prerequisite: LecturePrerequisite | null
+): LecturePrerequisite | null {
+  if (!prerequisite) return null;
+
+  const transformed = { ...prerequisite };
+
+  // Transform related lectures if present
+  if ('lecture' in prerequisite && prerequisite.lecture) {
+    transformed.lecture = transformLecture(prerequisite.lecture);
+  }
+
+  if ('prerequisiteLecture' in prerequisite && prerequisite.prerequisiteLecture) {
+    transformed.prerequisiteLecture = transformLecture(prerequisite.prerequisiteLecture);
+  }
+
+  return transformed;
+}
+
+/**
  * Transform Progress data from database model to API response
  */
 export function transformProgress(
@@ -117,14 +140,29 @@ export function transformProgress(
  */
 export function transformReflection(
   reflection: Reflection | null
-): Reflection | null {
+): (Reflection & {
+  parsedEvaluation: AIEvaluationData | null
+}) | null {
   if (!reflection) return null;
 
+  // Create the transformed reflection with parsed evaluation
   return {
     ...reflection,
     // Deserialize JSON fields like aiEvaluation if needed
-    aiEvaluation: reflection.aiEvaluation ? deserializeJsonFromDb(reflection.aiEvaluation) : null
+    parsedEvaluation: reflection.aiEvaluation ? deserializeJsonFromDb(reflection.aiEvaluation) : null
   };
+}
+
+// Make sure to also define the AIEvaluationData interface
+export interface AIEvaluationData {
+  score: number;
+  feedback: string;
+  areas: {
+    strength: string[];
+    improvement: string[];
+  };
+  conceptualUnderstanding: number;
+  criticalThinking: number;
 }
 
 /**
@@ -138,7 +176,7 @@ export function transformLectureAvailability(availabilityData: {
   status: string;
   readinessScore: number;
   prerequisitesSatisfied: boolean;
-  prerequisitesCount: {
+  prerequisitesCount?: {
     required: number;
     recommended: number;
     completedRequired: number;
@@ -159,11 +197,11 @@ export function transformLectureAvailability(availabilityData: {
  */
 export function transformPrerequisiteCheckResult(checkResult: {
   satisfied: boolean;
-  requiredPrerequisites: any[];
-  completedPrerequisites: any[];
-  missingRequiredPrerequisites: any[];
-  recommendedPrerequisites: any[];
-  completedRecommendedPrerequisites: any[];
+  requiredPrerequisites?: any[];
+  completedPrerequisites?: any[];
+  missingRequiredPrerequisites?: any[];
+  recommendedPrerequisites?: any[];
+  completedRecommendedPrerequisites?: any[];
   readinessScore: number;
 } | null) {
   if (!checkResult) return null;

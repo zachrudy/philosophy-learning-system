@@ -8,6 +8,25 @@ import {
   sampleUserProgress
 } from '../fixtures/lecture-fixtures';
 
+// Mock the transform functions
+jest.mock('@/lib/transforms', () => ({
+  transformLecture: jest.fn(data => data),
+  transformLectureWithRelations: jest.fn(data => data),
+  transformLecturePrerequisite: jest.fn(data => data),
+  transformPrerequisiteCheckResult: jest.fn(data => data),
+  transformLectureAvailability: jest.fn(data => data),
+  transformArray: jest.fn((items, transformFn) => items?.map(transformFn).filter(Boolean) || []),
+  createApiResponse: jest.fn((data, meta) => ({ data, ...(meta ? { meta } : {}) })),
+  createPaginatedResponse: jest.fn((data, pagination, additionalMeta) => ({
+    data,
+    meta: { pagination, ...additionalMeta }
+  })),
+  createTransformedResponse: jest.fn((data, transformFn, meta) => ({
+    data: data ? transformFn(data) : null,
+    ...(meta ? { meta } : {})
+  })),
+}));
+
 // Mock the prisma client
 jest.mock('@/lib/db/prisma', () => ({
   prisma: {
