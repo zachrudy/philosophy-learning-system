@@ -12,6 +12,8 @@ import {
   UserWithProgress
 } from '@/types/models';
 import { validatePrerequisite } from '@/lib/validation/prerequisiteValidation';
+// Import the LectureController to use the lectureExists helper
+import { LectureController } from './lectureController';
 
 // Import transformation functions
 import {
@@ -39,12 +41,9 @@ export class LecturePrerequisiteController {
     try {
       const { includeDetails = false } = options;
 
-      // Check if lecture exists
-      const lecture = await prisma.lecture.findUnique({
-        where: { id: lectureId }
-      });
-
-      if (!lecture) {
+      // Use LectureController.lectureExists helper
+      const exists = await LectureController.lectureExists(lectureId);
+      if (!exists) {
         return {
           success: false,
           error: 'Lecture not found'
@@ -88,12 +87,9 @@ export class LecturePrerequisiteController {
     try {
       const { includeDetails = false } = options;
 
-      // Check if lecture exists
-      const lecture = await prisma.lecture.findUnique({
-        where: { id: prerequisiteId }
-      });
-
-      if (!lecture) {
+      // Use LectureController.lectureExists helper
+      const exists = await LectureController.lectureExists(prerequisiteId);
+      if (!exists) {
         return {
           success: false,
           error: 'Lecture not found'
@@ -158,20 +154,20 @@ export class LecturePrerequisiteController {
       // Use the sanitized data
       const { lectureId, prerequisiteLectureId, isRequired = true, importanceLevel = 3 } = validation.sanitizedData!;
 
-      // Check if both lectures exist
-      const [lecture, prerequisiteLecture] = await Promise.all([
-        prisma.lecture.findUnique({ where: { id: lectureId } }),
-        prisma.lecture.findUnique({ where: { id: prerequisiteLectureId } })
+      // Check if both lectures exist using the lectureExists helper
+      const [lectureExists, prerequisiteLectureExists] = await Promise.all([
+        LectureController.lectureExists(lectureId),
+        LectureController.lectureExists(prerequisiteLectureId)
       ]);
 
-      if (!lecture) {
+      if (!lectureExists) {
         return {
           success: false,
           error: 'Lecture not found'
         };
       }
 
-      if (!prerequisiteLecture) {
+      if (!prerequisiteLectureExists) {
         return {
           success: false,
           error: 'Prerequisite lecture not found'
@@ -353,10 +349,12 @@ export class LecturePrerequisiteController {
         };
       }
 
-      if (!lectureId) {
+      // Use LectureController.lectureExists helper
+      const exists = await LectureController.lectureExists(lectureId);
+      if (!exists) {
         return {
           success: false,
-          error: 'Lecture ID is required'
+          error: 'Lecture not found'
         };
       }
 
@@ -369,18 +367,6 @@ export class LecturePrerequisiteController {
         return {
           success: false,
           error: 'User not found'
-        };
-      }
-
-      // Check if lecture exists
-      const lecture = await prisma.lecture.findUnique({
-        where: { id: lectureId }
-      });
-
-      if (!lecture) {
-        return {
-          success: false,
-          error: 'Lecture not found'
         };
       }
 

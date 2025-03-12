@@ -157,6 +157,15 @@ export class LectureController {
     deep?: boolean;
   } = {}) {
     try {
+      // Use the new helper method to check if lecture exists
+      const exists = await LectureController.lectureExists(id);
+      if (!exists) {
+        return {
+          success: false,
+          error: 'Lecture not found'
+        };
+      }
+
       const {
         includeEntities = false,
         includePrerequisites = false,
@@ -203,13 +212,6 @@ export class LectureController {
         where: { id },
         include: Object.keys(include).length > 0 ? include : undefined
       });
-
-      if (!lecture) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
-      }
 
       // Transform the lecture data
       const transformedLecture = transformLectureWithRelations(lecture);
@@ -259,13 +261,25 @@ export class LectureController {
 
       // Use transaction to ensure atomicity
       const result = await prisma.$transaction(async (tx: PrismaClient) => {
+        // If order is not specified, get the next available order for the category
+        let order = data.order;
+        if (order === undefined) {
+          // Can't use this.getNextOrderInCategory inside the transaction because
+          // it uses the global prisma instance, not the transaction instance
+          const maxOrderLecture = await tx.lecture.findFirst({
+            where: { category: lectureData.category },
+            orderBy: { order: 'desc' }
+          });
+          order = maxOrderLecture ? maxOrderLecture.order + 1 : 0;
+        }
+
         // Create the lecture first with default prompts if needed
         const lecture = await tx.lecture.create({
           data: {
             ...lectureData,
             ...promptDefaults, // Apply prompt defaults for missing fields
             embedAllowed: data.embedAllowed !== undefined ? data.embedAllowed : true,
-            order: data.order || 0, // Default order to 0 if not specified
+            order: order,
           }
         });
 
@@ -317,12 +331,9 @@ export class LectureController {
         // If prerequisites are provided, create them
         if (prerequisiteIds && prerequisiteIds.length > 0) {
           for (const prereq of prerequisiteIds) {
-            // Verify the prerequisite lecture exists
-            const prerequisiteLecture = await tx.lecture.findUnique({
-              where: { id: prereq.id }
-            });
-
-            if (!prerequisiteLecture) {
+            // Verify the prerequisite lecture exists using our helper
+            const prerequisiteExists = await LectureController.lectureExists(prereq.id);
+            if (!prerequisiteExists) {
               throw new Error(`Prerequisite lecture with ID ${prereq.id} not found`);
             }
 
@@ -383,12 +394,9 @@ export class LectureController {
    */
   static async updateLecture(id: string, data: UpdateLectureDTO) {
     try {
-      // First check if lecture exists
-      const existingLecture = await prisma.lecture.findUnique({
-        where: { id }
-      });
-
-      if (!existingLecture) {
+      // Use the helper method to check if lecture exists
+      const exists = await LectureController.lectureExists(id);
+      if (!exists) {
         return {
           success: false,
           error: 'Lecture not found'
@@ -526,7 +534,16 @@ export class LectureController {
    */
   static async deleteLecture(id: string) {
     try {
-      // Check if lecture exists
+      // Use the helper method to check if lecture exists
+      const exists = await LectureController.lectureExists(id);
+      if (!exists) {
+        return {
+          success: false,
+          error: 'Lecture not found'
+        };
+      }
+
+      // Get the lecture to check for prerequisites
       const lecture = await prisma.lecture.findUnique({
         where: { id },
         include: {
@@ -534,13 +551,6 @@ export class LectureController {
           prerequisiteFor: true
         }
       });
-
-      if (!lecture) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
-      }
 
       // Check if this lecture is a prerequisite for other lectures
       if (lecture.prerequisiteFor.length > 0) {
@@ -596,12 +606,9 @@ export class LectureController {
    */
   static async getLectureEntityRelations(lectureId: string) {
     try {
-      // Check if lecture exists
-      const lecture = await prisma.lecture.findUnique({
-        where: { id: lectureId }
-      });
-
-      if (!lecture) {
+      // Use the helper method to check if lecture exists
+      const exists = await LectureController.lectureExists(lectureId);
+      if (!exists) {
         return {
           success: false,
           error: 'Lecture not found'
@@ -725,5 +732,25 @@ export class LectureController {
      'masteryPrompt', 'evaluationPrompt', 'discussionPrompts'].forEach(sanitizeField);
 
     return sanitized;
+  }
+
+  /**
+   * Check if a lecture exists by ID
+   * This is a utility method that can be used by other controllers and components
+   */
+  static async lectureExists(id: string): Promise<boolean> {
+    try {
+      if (!id) return false;
+
+      const lecture = await prisma.lecture.findUnique({
+        where: { id },
+        select: { id: true } // Only select the ID for efficiency
+      });
+
+      return lecture !== null;
+    } catch (error) {
+      console.error(`Error checking if lecture exists (ID: ${id}):`, error);
+      return false;
+    }
   }
 }
