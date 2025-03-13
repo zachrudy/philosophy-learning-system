@@ -139,7 +139,7 @@ describe('LecturePrerequisiteController', () => {
 
       // Assertions
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Lecture not found');
+      expect(result.error).toBe('Lecture with ID non-existent-id not found');
     });
   });
 
@@ -309,7 +309,7 @@ describe('LecturePrerequisiteController', () => {
 
       // Assertions
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Prerequisite not found');
+      expect(result.error).toBe('Prerequisite with ID non-existent-id not found');
       expect(prisma.lecturePrerequisite.update).not.toHaveBeenCalled();
     });
 
@@ -381,7 +381,7 @@ describe('LecturePrerequisiteController', () => {
 
       // Assertions
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Prerequisite not found');
+      expect(result.error).toBe('Prerequisite with ID non-existent-id not found');
       expect(prisma.lecturePrerequisite.delete).not.toHaveBeenCalled();
     });
   });

@@ -15,6 +15,16 @@ import { validatePrerequisite } from '@/lib/validation/prerequisiteValidation';
 // Import the LectureController to use the lectureExists helper
 import { LectureController } from './lectureController';
 
+// Import error classes
+import {
+  AppError,
+  NotFoundError,
+  ValidationError,
+  ConflictError,
+  CircularDependencyError,
+  DatabaseError
+} from '@/lib/errors/appErrors';
+
 // Import transformation functions
 import {
   transformLecture,
@@ -27,6 +37,7 @@ import {
   transformArray,
   createTransformedResponse
 } from '@/lib/transforms';
+
 
 /**
  * Controller for managing lecture prerequisites
@@ -44,10 +55,7 @@ export class LecturePrerequisiteController {
       // Use LectureController.lectureExists helper
       const exists = await LectureController.lectureExists(lectureId);
       if (!exists) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
+        throw new NotFoundError(`Lecture with ID ${lectureId} not found`);
       }
 
       // Get prerequisites with optional details
@@ -71,6 +79,17 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error fetching prerequisites:', error);
+
+      // Preserve the specific error types
+      if (error instanceof AppError) {
+        return {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+      }
+
+      // Generic database error
       return {
         success: false,
         error: `Failed to fetch prerequisites: ${error.message}`
@@ -90,10 +109,7 @@ export class LecturePrerequisiteController {
       // Use LectureController.lectureExists helper
       const exists = await LectureController.lectureExists(prerequisiteId);
       if (!exists) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
+        throw new NotFoundError(`Lecture with ID ${prerequisiteId} not found`);
       }
 
       // Get lectures that have this prerequisite
@@ -119,6 +135,17 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error fetching dependent lectures:', error);
+
+      // Preserve the specific error types
+      if (error instanceof AppError) {
+        return {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+      }
+
+      // Generic error
       return {
         success: false,
         error: `Failed to fetch dependent lectures: ${error.message}`
@@ -145,10 +172,22 @@ export class LecturePrerequisiteController {
       // Validate the prerequisite data
       const validation = this.validatePrerequisiteData(data);
       if (!validation.valid) {
-        return {
-          success: false,
-          error: `Validation failed: ${validation.errors.join(', ')}`
-        };
+        throw new ValidationError(
+          `Validation failed: ${validation.errors.join(', ')}`,
+          // Create a map of invalid fields for the validation error
+          validation.errors.reduce((acc, error) => {
+            // Simple parsing of error messages to determine field names
+            const field = error.toLowerCase().includes('lecture')
+              ? 'lectureId'
+              : error.toLowerCase().includes('prerequisite')
+                ? 'prerequisiteLectureId'
+                : error.toLowerCase().includes('importance')
+                  ? 'importanceLevel'
+                  : 'general';
+            acc[field] = error;
+            return acc;
+          }, {} as Record<string, string>)
+        );
       }
 
       // Use the sanitized data
@@ -161,17 +200,11 @@ export class LecturePrerequisiteController {
       ]);
 
       if (!lectureExists) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
+        throw new NotFoundError(`Lecture with ID ${lectureId} not found`);
       }
 
       if (!prerequisiteLectureExists) {
-        return {
-          success: false,
-          error: 'Prerequisite lecture not found'
-        };
+        throw new NotFoundError(`Prerequisite lecture with ID ${prerequisiteLectureId} not found`);
       }
 
       // Check if this prerequisite already exists
@@ -183,25 +216,21 @@ export class LecturePrerequisiteController {
       });
 
       if (existingPrerequisite) {
-        return {
-          success: false,
-          error: 'This prerequisite relationship already exists',
-          existingId: existingPrerequisite.id
-        };
+        // Create a custom ConflictError with the existingId property
+        const error = new ConflictError('This prerequisite relationship already exists');
+        (error as any).existingId = existingPrerequisite.id;
+        throw error;
       }
 
       // Enhance circular dependency checking with additional validation
       const circularDependency = await this.checkCircularDependencies(lectureId, prerequisiteLectureId);
       if (circularDependency.hasCycle) {
         // Provide more detailed error information about the cycle
-        return {
-          success: false,
-          error: 'Adding this prerequisite would create a circular dependency',
-          cycleDetails: {
-            path: circularDependency.path,
-            description: `Adding this prerequisite would create a dependency cycle: ${circularDependency.path.join(' -> ')}`
-          }
-        };
+        const error = new CircularDependencyError(
+          'Adding this prerequisite would create a circular dependency',
+          circularDependency.path
+        );
+        throw error;
       }
 
       // Create the prerequisite with validated data
@@ -231,6 +260,37 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error adding prerequisite:', error);
+
+      // Preserve specific error types and additional information
+      if (error instanceof AppError) {
+        const response: any = {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+
+        // Handle special properties for different error types
+        if (error instanceof ValidationError && error.invalidFields) {
+          response.invalidFields = error.invalidFields;
+        }
+
+        // For conflict errors with existingId
+        if (error instanceof ConflictError && (error as any).existingId) {
+          response.existingId = (error as any).existingId;
+        }
+
+        // For circular dependency errors
+        if (error instanceof CircularDependencyError && error.path) {
+          response.cycleDetails = {
+            path: error.path,
+            description: `Adding this prerequisite would create a dependency cycle: ${error.path.join(' -> ')}`
+          };
+        }
+
+        return response;
+      }
+
+      // Generic database error
       return {
         success: false,
         error: `Failed to add prerequisite: ${error.message}`
@@ -249,10 +309,19 @@ export class LecturePrerequisiteController {
       // Validate the update data
       const validation = this.validatePrerequisiteData(data, true);
       if (!validation.valid) {
-        return {
-          success: false,
-          error: `Validation failed: ${validation.errors.join(', ')}`
-        };
+        throw new ValidationError(
+          `Validation failed: ${validation.errors.join(', ')}`,
+          // Create a map of invalid fields
+          validation.errors.reduce((acc, error) => {
+            const field = error.toLowerCase().includes('importance')
+              ? 'importanceLevel'
+              : error.toLowerCase().includes('required')
+                ? 'isRequired'
+                : 'general';
+            acc[field] = error;
+            return acc;
+          }, {} as Record<string, string>)
+        );
       }
 
       // Use the sanitized data
@@ -264,10 +333,7 @@ export class LecturePrerequisiteController {
       });
 
       if (!prerequisite) {
-        return {
-          success: false,
-          error: 'Prerequisite not found'
-        };
+        throw new NotFoundError(`Prerequisite with ID ${id} not found`);
       }
 
       // Update the prerequisite with validated data
@@ -293,6 +359,24 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error updating prerequisite:', error);
+
+      // Preserve specific error types
+      if (error instanceof AppError) {
+        const response: any = {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+
+        // Add validation fields if this is a validation error
+        if (error instanceof ValidationError && error.invalidFields) {
+          response.invalidFields = error.invalidFields;
+        }
+
+        return response;
+      }
+
+      // Generic error
       return {
         success: false,
         error: `Failed to update prerequisite: ${error.message}`
@@ -311,10 +395,7 @@ export class LecturePrerequisiteController {
       });
 
       if (!prerequisite) {
-        return {
-          success: false,
-          error: 'Prerequisite not found'
-        };
+        throw new NotFoundError(`Prerequisite with ID ${id} not found`);
       }
 
       // Delete the prerequisite
@@ -328,6 +409,17 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error removing prerequisite:', error);
+
+      // Preserve specific error types
+      if (error instanceof AppError) {
+        return {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+      }
+
+      // Generic database error
       return {
         success: false,
         error: `Failed to remove prerequisite: ${error.message}`
@@ -342,19 +434,15 @@ export class LecturePrerequisiteController {
     try {
       // Validate inputs
       if (!userId) {
-        return {
-          success: false,
-          error: 'User ID is required'
-        };
+        throw new ValidationError('User ID is required', {
+          userId: 'User ID is required'
+        });
       }
 
       // Use LectureController.lectureExists helper
       const exists = await LectureController.lectureExists(lectureId);
       if (!exists) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
+        throw new NotFoundError(`Lecture with ID ${lectureId} not found`);
       }
 
       // Check if user exists
@@ -363,16 +451,31 @@ export class LecturePrerequisiteController {
       });
 
       if (!user) {
-        return {
-          success: false,
-          error: 'User not found'
-        };
+        throw new NotFoundError(`User with ID ${userId} not found`);
       }
 
       // Use the centralized prerequisite checking utility
       return await this.checkAndCategorizePrerequisites(lectureId, userId);
     } catch (error) {
       console.error('Error checking prerequisites:', error);
+
+      // Preserve specific error types
+      if (error instanceof AppError) {
+        const response: any = {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+
+        // Add validation fields if this is a validation error
+        if (error instanceof ValidationError && error.invalidFields) {
+          response.invalidFields = error.invalidFields;
+        }
+
+        return response;
+      }
+
+      // Generic error
       return {
         success: false,
         error: `Failed to check prerequisites: ${error.message}`
@@ -391,24 +494,50 @@ export class LecturePrerequisiteController {
     try {
       const { category, includeDetails = false, includeInProgress = true } = options;
 
+      if (!userId) {
+        throw new ValidationError('User ID is required', {
+          userId: 'User ID is required'
+        });
+      }
+
+      // Check if user exists
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true } // Only select ID to optimize query
+      });
+
+      if (!user) {
+        throw new NotFoundError(`User with ID ${userId} not found`);
+      }
+
       // Get all lectures
       const where: any = {};
       if (category) {
         where.category = category;
       }
 
-      const allLectures = await prisma.lecture.findMany({
-        where,
-        orderBy: [
-          { category: 'asc' },
-          { order: 'asc' }
-        ]
-      });
+      let allLectures;
+      try {
+        allLectures = await prisma.lecture.findMany({
+          where,
+          orderBy: [
+            { category: 'asc' },
+            { order: 'asc' }
+          ]
+        });
+      } catch (dbError) {
+        throw new DatabaseError(`Failed to fetch lectures: ${dbError.message}`);
+      }
 
       // Get all user progress
-      const userProgress = await prisma.progress.findMany({
-        where: { userId }
-      });
+      let userProgress;
+      try {
+        userProgress = await prisma.progress.findMany({
+          where: { userId }
+        });
+      } catch (dbError) {
+        throw new DatabaseError(`Failed to fetch user progress: ${dbError.message}`);
+      }
 
       // Identify completed lectures
       const completedLectureIds = userProgress
@@ -421,11 +550,16 @@ export class LecturePrerequisiteController {
         .map(p => p.lectureId);
 
       // Get all lecture prerequisites
-      const allPrerequisites = await prisma.lecturePrerequisite.findMany({
-        where: {
-          lectureId: { in: allLectures.map(l => l.id) }
-        }
-      });
+      let allPrerequisites;
+      try {
+        allPrerequisites = await prisma.lecturePrerequisite.findMany({
+          where: {
+            lectureId: { in: allLectures.map(l => l.id) }
+          }
+        });
+      } catch (dbError) {
+        throw new DatabaseError(`Failed to fetch prerequisites: ${dbError.message}`);
+      }
 
       // Group prerequisites by lecture
       const prerequisitesByLecture = allPrerequisites.reduce((acc, prereq) => {
@@ -527,9 +661,27 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error checking prerequisites:', error);
+
+      // Preserve specific error types
+      if (error instanceof AppError) {
+        const response: any = {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+
+        // Add validation fields if this is a validation error
+        if (error instanceof ValidationError && error.invalidFields) {
+          response.invalidFields = error.invalidFields;
+        }
+
+        return response;
+      }
+
+      // Generic error
       return {
         success: false,
-        error: `Failed to check prerequisites: ${error.message}`
+        error: `Failed to retrieve available lectures: ${error.message}`
       };
     }
   }
@@ -544,14 +696,27 @@ export class LecturePrerequisiteController {
     try {
       const { limit = 5, category } = options;
 
+      if (!userId) {
+        throw new ValidationError('User ID is required', {
+          userId: 'User ID is required'
+        });
+      }
+
       // Get available lectures for the student
       const availableLecturesResult = await this.getAvailableLecturesForStudent(userId, {
         category,
         includeInProgress: true
       });
 
+      // Properly propagate errors from getAvailableLecturesForStudent
       if (!availableLecturesResult.success) {
-        return availableLecturesResult;
+        // If the result already contains statusCode, it's from a specific error type
+        if ('statusCode' in availableLecturesResult) {
+          return availableLecturesResult;
+        }
+
+        // Otherwise, convert to generic error
+        throw new Error(availableLecturesResult.error || 'Failed to retrieve available lectures');
       }
 
       const availableLectures = availableLecturesResult.data;
@@ -596,6 +761,23 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error suggesting next lectures:', error);
+
+      // Preserve specific error types
+      if (error instanceof AppError) {
+        const response: any = {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+
+        if (error instanceof ValidationError && error.invalidFields) {
+          response.invalidFields = error.invalidFields;
+        }
+
+        return response;
+      }
+
+      // Generic error
       return {
         success: false,
         error: `Failed to suggest next lectures: ${error.message}`
@@ -605,9 +787,16 @@ export class LecturePrerequisiteController {
 
   /**
    * Enhanced check for circular dependencies before creating a prerequisite
-   * with additional validation and more detailed path information
+   * with additional validation and more detailed path information.
+   *
+   * This method can either throw a CircularDependencyError or return a result object.
+   * @param throwError If true, throws CircularDependencyError when a cycle is found
    */
-  static async checkCircularDependencies(lectureId: string, prerequisiteId: string): Promise<{
+  static async checkCircularDependencies(
+    lectureId: string,
+    prerequisiteId: string,
+    throwError: boolean = false
+  ): Promise<{
     hasCycle: boolean;
     path: string[];
     lectureNames?: Record<string, string>; // Map of lecture IDs to names for easier debugging
@@ -645,10 +834,15 @@ export class LecturePrerequisiteController {
       await getLectureName(currentId);
 
       // Get all prerequisites of the current lecture
-      const prerequisites = await prisma.lecturePrerequisite.findMany({
-        where: { lectureId: currentId },
-        select: { prerequisiteLectureId: true }
-      });
+      let prerequisites;
+      try {
+        prerequisites = await prisma.lecturePrerequisite.findMany({
+          where: { lectureId: currentId },
+          select: { prerequisiteLectureId: true }
+        });
+      } catch (error) {
+        throw new DatabaseError(`Failed to check dependencies: ${error.message}`);
+      }
 
       // Check each prerequisite recursively
       for (const prereq of prerequisites) {
@@ -678,27 +872,46 @@ export class LecturePrerequisiteController {
       return false; // No cycle found
     };
 
-    // Start DFS from the prerequisite
-    const hasCycle = await dfs(prerequisiteId, lectureId);
+    try {
+      // Start DFS from the prerequisite
+      const hasCycle = await dfs(prerequisiteId, lectureId);
 
-    // If a cycle was found, add the target lecture to close the loop
-    if (hasCycle) {
-      path.push(lectureId);
-      await getLectureName(lectureId);
+      // If a cycle was found, add the target lecture to close the loop
+      if (hasCycle) {
+        path.push(lectureId);
+        await getLectureName(lectureId);
+      }
+
+      // Convert path IDs to lecture names for better debugging
+      const pathWithNames = hasCycle
+        ? path.map(id => `${lectureNames[id] || 'Unknown'} (${id})`)
+        : [];
+
+      // If throwError is true and a cycle was found, throw CircularDependencyError
+      if (throwError && hasCycle) {
+        throw new CircularDependencyError(
+          'Adding this prerequisite would create a circular dependency',
+          pathWithNames
+        );
+      }
+
+      // Return the result
+      return {
+        hasCycle,
+        path: pathWithNames,
+        lectureNames: hasCycle ? lectureNames : undefined
+      };
+    } catch (error) {
+      // If the error is already an AppError, rethrow it
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      // Otherwise, convert to a DatabaseError
+      console.error('Error in dependency checking:', error);
+      throw new DatabaseError(`Failed to check for circular dependencies: ${error.message}`);
     }
-
-    // Convert path IDs to lecture names for better debugging
-    const pathWithNames = hasCycle
-      ? path.map(id => `${lectureNames[id] || 'Unknown'} (${id})`)
-      : [];
-
-    return {
-      hasCycle,
-      path: pathWithNames,
-      lectureNames: hasCycle ? lectureNames : undefined
-    };
   }
-
   /**
    * Check prerequisites for a lecture and return detailed information
    * This centralizes prerequisite checking logic in one place
@@ -707,19 +920,59 @@ export class LecturePrerequisiteController {
     try {
       // Input validation
       if (!lectureId || !userId) {
-        return {
-          success: false,
-          error: 'Both lecture ID and user ID are required'
-        };
+        const invalidFields: Record<string, string> = {};
+
+        if (!lectureId) {
+          invalidFields.lectureId = 'Lecture ID is required';
+        }
+
+        if (!userId) {
+          invalidFields.userId = 'User ID is required';
+        }
+
+        throw new ValidationError(
+          'Both lecture ID and user ID are required',
+          invalidFields
+        );
+      }
+
+      // Verify entities exist
+      try {
+        // Check if lecture exists
+        const lectureExists = await LectureController.lectureExists(lectureId);
+        if (!lectureExists) {
+          throw new NotFoundError(`Lecture with ID ${lectureId} not found`);
+        }
+
+        // Check if user exists
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true } // Only select ID to optimize the query
+        });
+
+        if (!user) {
+          throw new NotFoundError(`User with ID ${userId} not found`);
+        }
+      } catch (error) {
+        // Pass through AppError, but wrap other errors
+        if (error instanceof AppError) {
+          throw error;
+        }
+        throw new DatabaseError(`Error verifying entities: ${error.message}`);
       }
 
       // Get all prerequisites for the lecture
-      const prerequisites = await prisma.lecturePrerequisite.findMany({
-        where: { lectureId },
-        include: {
-          prerequisiteLecture: true
-        }
-      });
+      let prerequisites;
+      try {
+        prerequisites = await prisma.lecturePrerequisite.findMany({
+          where: { lectureId },
+          include: {
+            prerequisiteLecture: true
+          }
+        });
+      } catch (error) {
+        throw new DatabaseError(`Failed to fetch prerequisites: ${error.message}`);
+      }
 
       // If no prerequisites, the conditions are satisfied
       if (prerequisites.length === 0) {
@@ -739,12 +992,17 @@ export class LecturePrerequisiteController {
 
       // Get the user's progress for all prerequisites
       const prerequisiteIds = prerequisites.map(p => p.prerequisiteLectureId);
-      const userProgress = await prisma.progress.findMany({
-        where: {
-          userId,
-          lectureId: { in: prerequisiteIds }
-        }
-      });
+      let userProgress;
+      try {
+        userProgress = await prisma.progress.findMany({
+          where: {
+            userId,
+            lectureId: { in: prerequisiteIds }
+          }
+        });
+      } catch (error) {
+        throw new DatabaseError(`Failed to fetch user progress: ${error.message}`);
+      }
 
       // Organize prerequisites by required/recommended
       const requiredPrerequisites = prerequisites.filter(p => p.isRequired);
@@ -809,6 +1067,24 @@ export class LecturePrerequisiteController {
       };
     } catch (error) {
       console.error('Error checking prerequisites:', error);
+
+      // Preserve specific error types
+      if (error instanceof AppError) {
+        const response: any = {
+          success: false,
+          error: error.message,
+          statusCode: error.statusCode
+        };
+
+        // Add validation fields if this is a validation error
+        if (error instanceof ValidationError && error.invalidFields) {
+          response.invalidFields = error.invalidFields;
+        }
+
+        return response;
+      }
+
+      // Generic error
       return {
         success: false,
         error: `Failed to check prerequisites: ${error.message}`

@@ -184,7 +184,7 @@ describe('LectureController', () => {
 
       // Assertions
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Lecture not found');
+      expect(result.error).toBe('Lecture with ID non-existent-id not found');
     });
   });
 
@@ -471,7 +471,7 @@ describe('LectureController', () => {
 
       // Assertions
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Lecture not found');
+      expect(result.error).toBe('Lecture with ID non-existent-id not found');
       expect(prisma.lecture.update).not.toHaveBeenCalled();
     });
 
