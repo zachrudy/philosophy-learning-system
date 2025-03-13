@@ -326,6 +326,9 @@ describe('LectureController', () => {
             lectureId: 'new-lecture-id',
             entityId: relation.entityId,
             relationType: relation.relationType
+          },
+          include: {
+            entity: true
           }
         });
       });

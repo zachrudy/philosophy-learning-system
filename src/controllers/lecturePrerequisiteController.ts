@@ -337,7 +337,6 @@ export class LecturePrerequisiteController {
 
   /**
    * Check if a student has completed the prerequisites for a lecture
-   * with enhanced validation
    */
   static async checkPrerequisitesSatisfied(userId: string, lectureId: string) {
     try {
@@ -370,101 +369,8 @@ export class LecturePrerequisiteController {
         };
       }
 
-      // Get all prerequisites for the lecture
-      const prerequisites = await prisma.lecturePrerequisite.findMany({
-        where: { lectureId },
-        include: {
-          prerequisiteLecture: true
-        }
-      });
-
-      // If no prerequisites, the conditions are satisfied
-      if (prerequisites.length === 0) {
-        return {
-          success: true,
-          data: {
-            satisfied: true,
-            requiredPrerequisites: [],
-            completedPrerequisites: [],
-            missingRequiredPrerequisites: [],
-            recommendedPrerequisites: [],
-            completedRecommendedPrerequisites: [],
-            readinessScore: 100 // Full score if no prerequisites
-          }
-        };
-      }
-
-      // Get the user's progress for all prerequisites
-      const prerequisiteIds = prerequisites.map(p => p.prerequisiteLectureId);
-      const userProgress = await prisma.progress.findMany({
-        where: {
-          userId,
-          lectureId: { in: prerequisiteIds }
-        }
-      });
-
-      // Organize prerequisites by required/recommended
-      const requiredPrerequisites = prerequisites.filter(p => p.isRequired);
-      const recommendedPrerequisites = prerequisites.filter(p => !p.isRequired);
-
-      // Identify completed prerequisites
-      const completedPrerequisiteIds = userProgress
-        .filter(p => p.status === PROGRESS_STATUS.MASTERED)
-        .map(p => p.lectureId);
-
-      // Check which required prerequisites are completed
-      const completedRequiredPrerequisites = requiredPrerequisites
-        .filter(p => completedPrerequisiteIds.includes(p.prerequisiteLectureId));
-
-      // Check which required prerequisites are missing
-      const missingRequiredPrerequisites = requiredPrerequisites
-        .filter(p => !completedPrerequisiteIds.includes(p.prerequisiteLectureId));
-
-      // Check which recommended prerequisites are completed
-      const completedRecommendedPrerequisites = recommendedPrerequisites
-        .filter(p => completedPrerequisiteIds.includes(p.prerequisiteLectureId));
-
-      // Calculate readiness score
-      let readinessScore = 0;
-
-      // If required prerequisites exist, they contribute 70% of the score
-      if (requiredPrerequisites.length > 0) {
-        readinessScore += 70 * (completedRequiredPrerequisites.length / requiredPrerequisites.length);
-      } else {
-        // If no required prerequisites, this part is automatically 70%
-        readinessScore += 70;
-      }
-
-      // Recommended prerequisites contribute 30% of the score
-      if (recommendedPrerequisites.length > 0) {
-        readinessScore += 30 * (completedRecommendedPrerequisites.length / recommendedPrerequisites.length);
-      } else {
-        // If no recommended prerequisites, this part is automatically 30%
-        readinessScore += 30;
-      }
-
-      // Round to 2 decimal places
-      readinessScore = Math.round(readinessScore * 100) / 100;
-
-      // Determine if all required prerequisites are satisfied
-      const satisfied = missingRequiredPrerequisites.length === 0;
-
-      // Prepare prerequisites result
-      const prerequisitesResult = {
-        satisfied,
-        requiredPrerequisites: transformArray(requiredPrerequisites, transformLecturePrerequisite),
-        completedPrerequisites: transformArray(completedRequiredPrerequisites, transformLecturePrerequisite),
-        missingRequiredPrerequisites: transformArray(missingRequiredPrerequisites, transformLecturePrerequisite),
-        recommendedPrerequisites: transformArray(recommendedPrerequisites, transformLecturePrerequisite),
-        completedRecommendedPrerequisites: transformArray(completedRecommendedPrerequisites, transformLecturePrerequisite),
-        readinessScore
-      };
-
-      // Transform the prerequisites result
-      return {
-        success: true,
-        data: transformPrerequisiteCheckResult(prerequisitesResult)
-      };
+      // Use the centralized prerequisite checking utility
+      return await this.checkAndCategorizePrerequisites(lectureId, userId);
     } catch (error) {
       console.error('Error checking prerequisites:', error);
       return {
@@ -791,5 +697,122 @@ export class LecturePrerequisiteController {
       path: pathWithNames,
       lectureNames: hasCycle ? lectureNames : undefined
     };
+  }
+
+  /**
+   * Check prerequisites for a lecture and return detailed information
+   * This centralizes prerequisite checking logic in one place
+   */
+  static async checkAndCategorizePrerequisites(lectureId: string, userId: string) {
+    try {
+      // Input validation
+      if (!lectureId || !userId) {
+        return {
+          success: false,
+          error: 'Both lecture ID and user ID are required'
+        };
+      }
+
+      // Get all prerequisites for the lecture
+      const prerequisites = await prisma.lecturePrerequisite.findMany({
+        where: { lectureId },
+        include: {
+          prerequisiteLecture: true
+        }
+      });
+
+      // If no prerequisites, the conditions are satisfied
+      if (prerequisites.length === 0) {
+        return {
+          success: true,
+          data: {
+            satisfied: true,
+            requiredPrerequisites: [],
+            completedPrerequisites: [],
+            missingRequiredPrerequisites: [],
+            recommendedPrerequisites: [],
+            completedRecommendedPrerequisites: [],
+            readinessScore: 100 // Full score if no prerequisites
+          }
+        };
+      }
+
+      // Get the user's progress for all prerequisites
+      const prerequisiteIds = prerequisites.map(p => p.prerequisiteLectureId);
+      const userProgress = await prisma.progress.findMany({
+        where: {
+          userId,
+          lectureId: { in: prerequisiteIds }
+        }
+      });
+
+      // Organize prerequisites by required/recommended
+      const requiredPrerequisites = prerequisites.filter(p => p.isRequired);
+      const recommendedPrerequisites = prerequisites.filter(p => !p.isRequired);
+
+      // Identify completed prerequisites
+      const completedPrerequisiteIds = userProgress
+        .filter(p => p.status === PROGRESS_STATUS.MASTERED)
+        .map(p => p.lectureId);
+
+      // Check which required prerequisites are completed
+      const completedRequiredPrerequisites = requiredPrerequisites
+        .filter(p => completedPrerequisiteIds.includes(p.prerequisiteLectureId));
+
+      // Check which required prerequisites are missing
+      const missingRequiredPrerequisites = requiredPrerequisites
+        .filter(p => !completedPrerequisiteIds.includes(p.prerequisiteLectureId));
+
+      // Check which recommended prerequisites are completed
+      const completedRecommendedPrerequisites = recommendedPrerequisites
+        .filter(p => completedPrerequisiteIds.includes(p.prerequisiteLectureId));
+
+      // Calculate readiness score
+      let readinessScore = 0;
+
+      // If required prerequisites exist, they contribute 70% of the score
+      if (requiredPrerequisites.length > 0) {
+        readinessScore += 70 * (completedRequiredPrerequisites.length / requiredPrerequisites.length);
+      } else {
+        // If no required prerequisites, this part is automatically 70%
+        readinessScore += 70;
+      }
+
+      // Recommended prerequisites contribute 30% of the score
+      if (recommendedPrerequisites.length > 0) {
+        readinessScore += 30 * (completedRecommendedPrerequisites.length / recommendedPrerequisites.length);
+      } else {
+        // If no recommended prerequisites, this part is automatically 30%
+        readinessScore += 30;
+      }
+
+      // Round to 2 decimal places
+      readinessScore = Math.round(readinessScore * 100) / 100;
+
+      // Determine if all required prerequisites are satisfied
+      const satisfied = missingRequiredPrerequisites.length === 0;
+
+      // Prepare prerequisites result
+      const prerequisitesResult = {
+        satisfied,
+        requiredPrerequisites: transformArray(requiredPrerequisites, transformLecturePrerequisite),
+        completedPrerequisites: transformArray(completedRequiredPrerequisites, transformLecturePrerequisite),
+        missingRequiredPrerequisites: transformArray(missingRequiredPrerequisites, transformLecturePrerequisite),
+        recommendedPrerequisites: transformArray(recommendedPrerequisites, transformLecturePrerequisite),
+        completedRecommendedPrerequisites: transformArray(completedRecommendedPrerequisites, transformLecturePrerequisite),
+        readinessScore
+      };
+
+      return {
+        success: true,
+        data: transformPrerequisiteCheckResult(prerequisitesResult)
+      };
+    } catch (error) {
+      console.error('Error checking prerequisites:', error);
+      return {
+        success: false,
+        error: `Failed to check prerequisites: ${error.message}`
+      };
+    }
   }
 }

@@ -229,305 +229,276 @@ export class LectureController {
     }
   }
 
-  /**
-   * Create a new lecture
-   */
-  static async createLecture(data: CreateLectureDTO) {
-    try {
-      // Validate and sanitize the data
-      const validation = this.validateLectureData(data);
+   /**
+    * Create a new lecture
+    */
+   static async createLecture(data: CreateLectureDTO) {
+     try {
+       // Validate and sanitize the data
+       const validation = this.validateLectureData(data);
 
-      if (!validation.valid) {
-        return {
-          success: false,
-          error: `Validation failed: ${validation.errors.join(', ')}`
-        };
-      }
+       if (!validation.valid) {
+         return {
+           success: false,
+           error: `Validation failed: ${validation.errors.join(', ')}`
+         };
+       }
 
-      // Use the sanitized data
-      const sanitizedData = validation.sanitizedData!;
+       // Use the sanitized data
+       const sanitizedData = validation.sanitizedData!;
 
-      // The prompt fields can have default placeholders if not provided (for CSV import workflow)
-      const promptDefaults = {
-        preLecturePrompt: data.preLecturePrompt || "What do you already know about this topic? (To be updated)",
-        initialPrompt: data.initialPrompt || "What are your initial thoughts after watching this lecture? (To be updated)",
-        masteryPrompt: data.masteryPrompt || "Demonstrate your understanding of the key concepts. (To be updated)",
-        evaluationPrompt: data.evaluationPrompt || "Evaluation criteria placeholder. (To be updated)",
-        discussionPrompts: data.discussionPrompts || "Discussion prompts placeholder. (To be updated)",
-      };
+       // The prompt fields can have default placeholders if not provided (for CSV import workflow)
+       const promptDefaults = {
+         preLecturePrompt: data.preLecturePrompt || "What do you already know about this topic? (To be updated)",
+         initialPrompt: data.initialPrompt || "What are your initial thoughts after watching this lecture? (To be updated)",
+         masteryPrompt: data.masteryPrompt || "Demonstrate your understanding of the key concepts. (To be updated)",
+         evaluationPrompt: data.evaluationPrompt || "Evaluation criteria placeholder. (To be updated)",
+         discussionPrompts: data.discussionPrompts || "Discussion prompts placeholder. (To be updated)",
+       };
 
-      // Extract entity relationships and prerequisites for separate handling
-      const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
+       // Extract entity relationships and prerequisites for separate handling
+       const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
 
-      // Use transaction to ensure atomicity
-      const result = await prisma.$transaction(async (tx: PrismaClient) => {
-        // If order is not specified, get the next available order for the category
-        let order = data.order;
-        if (order === undefined) {
-          // Can't use this.getNextOrderInCategory inside the transaction because
-          // it uses the global prisma instance, not the transaction instance
-          const maxOrderLecture = await tx.lecture.findFirst({
-            where: { category: lectureData.category },
-            orderBy: { order: 'desc' }
-          });
-          order = maxOrderLecture ? maxOrderLecture.order + 1 : 0;
-        }
+       // Use transaction to ensure atomicity
+       const result = await prisma.$transaction(async (tx: PrismaClient) => {
+         // If order is not specified, get the next available order for the category
+         let order = data.order;
+         if (order === undefined) {
+           // Can't use this.getNextOrderInCategory inside the transaction because
+           // it uses the global prisma instance, not the transaction instance
+           const maxOrderLecture = await tx.lecture.findFirst({
+             where: { category: lectureData.category },
+             orderBy: { order: 'desc' }
+           });
+           order = maxOrderLecture ? maxOrderLecture.order + 1 : 0;
+         }
 
-        // Create the lecture first with default prompts if needed
-        const lecture = await tx.lecture.create({
-          data: {
-            ...lectureData,
-            ...promptDefaults, // Apply prompt defaults for missing fields
-            embedAllowed: data.embedAllowed !== undefined ? data.embedAllowed : true,
-            order: order,
-          }
-        });
+         // Create the lecture first with default prompts if needed
+         const lecture = await tx.lecture.create({
+           data: {
+             ...lectureData,
+             ...promptDefaults, // Apply prompt defaults for missing fields
+             embedAllowed: data.embedAllowed !== undefined ? data.embedAllowed : true,
+             order: order,
+           }
+         });
 
-        // If entity IDs are provided, connect them directly
-        if (entityIds && entityIds.length > 0) {
-          for (const entityId of entityIds) {
-            // Verify the entity exists
-            const entity = await tx.philosophicalEntity.findUnique({
-              where: { id: entityId }
-            });
+         // If entity IDs are provided, connect them directly
+         if (entityIds && entityIds.length > 0) {
+           for (const entityId of entityIds) {
+             // Verify the entity exists
+             const entity = await tx.philosophicalEntity.findUnique({
+               where: { id: entityId }
+             });
 
-            if (!entity) {
-              throw new Error(`Entity with ID ${entityId} not found`);
-            }
+             if (!entity) {
+               throw new Error(`Entity with ID ${entityId} not found`);
+             }
 
-            // Connect the entity to the lecture
-            await tx.philosophicalEntity.update({
-              where: { id: entityId },
-              data: {
-                lectureId: lecture.id
-              }
-            });
-          }
-        }
+             // Connect the entity to the lecture
+             await tx.philosophicalEntity.update({
+               where: { id: entityId },
+               data: {
+                 lectureId: lecture.id
+               }
+             });
+           }
+         }
 
-        // If entity relations are provided, create them
-        if (entityRelations && entityRelations.length > 0) {
-          for (const relation of entityRelations) {
-            // Verify the entity exists
-            const entity = await tx.philosophicalEntity.findUnique({
-              where: { id: relation.entityId }
-            });
+         // If prerequisites are provided, create them
+         if (prerequisiteIds && prerequisiteIds.length > 0) {
+           for (const prereq of prerequisiteIds) {
+             // Verify the prerequisite lecture exists using our helper
+             const prerequisiteExists = await LectureController.lectureExists(prereq.id);
+             if (!prerequisiteExists) {
+               throw new Error(`Prerequisite lecture with ID ${prereq.id} not found`);
+             }
 
-            if (!entity) {
-              throw new Error(`Entity with ID ${relation.entityId} not found`);
-            }
+             // Check for circular dependency
+             if (prereq.id === lecture.id) {
+               throw new Error('A lecture cannot be a prerequisite of itself');
+             }
 
-            // Create the typed relation
-            await tx.lectureEntityRelation.create({
-              data: {
-                lectureId: lecture.id,
-                entityId: relation.entityId,
-                relationType: relation.relationType
-              }
-            });
-          }
-        }
+             // Create the prerequisite relationship
+             await tx.lecturePrerequisite.create({
+               data: {
+                 lectureId: lecture.id,
+                 prerequisiteLectureId: prereq.id,
+                 isRequired: prereq.isRequired !== undefined ? prereq.isRequired : true,
+                 importanceLevel: prereq.importanceLevel || 3
+               }
+             });
+           }
+         }
 
-        // If prerequisites are provided, create them
-        if (prerequisiteIds && prerequisiteIds.length > 0) {
-          for (const prereq of prerequisiteIds) {
-            // Verify the prerequisite lecture exists using our helper
-            const prerequisiteExists = await LectureController.lectureExists(prereq.id);
-            if (!prerequisiteExists) {
-              throw new Error(`Prerequisite lecture with ID ${prereq.id} not found`);
-            }
+         // Return the created lecture ID for further operations
+         return lecture.id;
+       });
 
-            // Check for circular dependency
-            if (prereq.id === lecture.id) {
-              throw new Error('A lecture cannot be a prerequisite of itself');
-            }
+       // After transaction completes, update entity relationships if provided
+       if (entityRelations && entityRelations.length > 0) {
+         await this.updateEntityRelationships(result, entityRelations);
+       }
 
-            // Create the prerequisite relationship
-            await tx.lecturePrerequisite.create({
-              data: {
-                lectureId: lecture.id,
-                prerequisiteLectureId: prereq.id,
-                isRequired: prereq.isRequired !== undefined ? prereq.isRequired : true,
-                importanceLevel: prereq.importanceLevel || 3
-              }
-            });
-          }
-        }
+       // Fetch the fully populated lecture with all relationships
+       const completeLecture = await prisma.lecture.findUnique({
+         where: { id: result },
+         include: {
+           entities: true,
+           entityRelations: {
+             include: {
+               entity: true
+             }
+           },
+           prerequisites: {
+             include: {
+               prerequisiteLecture: true
+             }
+           }
+         }
+       });
 
-        // Return the created lecture with its relationships
-        return await tx.lecture.findUnique({
-          where: { id: lecture.id },
-          include: {
-            entities: true,
-            entityRelations: {
-              include: {
-                entity: true
-              }
-            },
-            prerequisites: {
-              include: {
-                prerequisiteLecture: true
-              }
-            }
-          }
-        });
-      });
+       // Transform the result
+       const transformedResult = transformLectureWithRelations(completeLecture);
 
-      // Transform the result
-      const transformedResult = transformLectureWithRelations(result);
+       return {
+         success: true,
+         data: transformedResult
+       };
+     } catch (error) {
+       console.error('Error creating lecture:', error);
+       return {
+         success: false,
+         error: `Failed to create lecture: ${error.message}`
+       };
+     }
+   }
 
-      return {
-        success: true,
-        data: transformedResult
-      };
-    } catch (error) {
-      console.error('Error creating lecture:', error);
-      return {
-        success: false,
-        error: `Failed to create lecture: ${error.message}`
-      };
-    }
-  }
+   /**
+    * Update an existing lecture
+    */
+   static async updateLecture(id: string, data: UpdateLectureDTO) {
+     try {
+       // Use the helper method to check if lecture exists
+       const exists = await LectureController.lectureExists(id);
+       if (!exists) {
+         return {
+           success: false,
+           error: 'Lecture not found'
+         };
+       }
 
-  /**
-   * Update an existing lecture
-   */
-  static async updateLecture(id: string, data: UpdateLectureDTO) {
-    try {
-      // Use the helper method to check if lecture exists
-      const exists = await LectureController.lectureExists(id);
-      if (!exists) {
-        return {
-          success: false,
-          error: 'Lecture not found'
-        };
-      }
+       // Validate and sanitize the data
+       const validation = this.validateLectureData(data, true);
 
-      // Validate and sanitize the data
-      const validation = this.validateLectureData(data, true);
+       if (!validation.valid) {
+         return {
+           success: false,
+           error: `Validation failed: ${validation.errors.join(', ')}`
+         };
+       }
 
-      if (!validation.valid) {
-        return {
-          success: false,
-          error: `Validation failed: ${validation.errors.join(', ')}`
-        };
-      }
+       // Use the sanitized data
+       const sanitizedData = validation.sanitizedData!;
 
-      // Use the sanitized data
-      const sanitizedData = validation.sanitizedData!;
+       // Extract entity relationships and prerequisites for separate handling
+       const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
 
-      // Extract entity relationships and prerequisites for separate handling
-      const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
+       // Use transaction to ensure atomicity
+       const result = await prisma.$transaction(async (tx: PrismaClient) => {
+         // Update the lecture first
+         const updatedLecture = await tx.lecture.update({
+           where: { id },
+           data: lectureData
+         });
 
-      // Use transaction to ensure atomicity
-      const result = await prisma.$transaction(async (tx: PrismaClient) => {
-        // Update the lecture first
-        const updatedLecture = await tx.lecture.update({
-          where: { id },
-          data: lectureData
-        });
+         // Handle entity IDs if provided
+         if (entityIds !== undefined) {
+           // First disconnect all current entities
+           await tx.philosophicalEntity.updateMany({
+             where: { lectureId: id },
+             data: { lectureId: null }
+           });
 
-        // Handle entity relationships if provided
-        if (entityIds !== undefined) {
-          // First disconnect all current entities
-          await tx.philosophicalEntity.updateMany({
-            where: { lectureId: id },
-            data: { lectureId: null }
-          });
+           // Then reconnect the new entities
+           if (entityIds.length > 0) {
+             for (const entityId of entityIds) {
+               await tx.philosophicalEntity.update({
+                 where: { id: entityId },
+                 data: { lectureId: id }
+               });
+             }
+           }
+         }
 
-          // Then reconnect the new entities
-          if (entityIds.length > 0) {
-            for (const entityId of entityIds) {
-              await tx.philosophicalEntity.update({
-                where: { id: entityId },
-                data: { lectureId: id }
-              });
-            }
-          }
-        }
+         // Handle prerequisites if provided
+         if (prerequisiteIds !== undefined) {
+           // First delete all current prerequisites
+           await tx.lecturePrerequisite.deleteMany({
+             where: { lectureId: id }
+           });
 
-        // Handle entity relations if provided
-        if (entityRelations !== undefined) {
-          // First delete all current relations
-          await tx.lectureEntityRelation.deleteMany({
-            where: { lectureId: id }
-          });
+           // Then create the new prerequisites
+           if (prerequisiteIds.length > 0) {
+             for (const prereq of prerequisiteIds) {
+               // Check for circular dependency
+               if (prereq.id === id) {
+                 throw new Error('A lecture cannot be a prerequisite of itself');
+               }
 
-          // Then create the new relations
-          if (entityRelations.length > 0) {
-            for (const relation of entityRelations) {
-              await tx.lectureEntityRelation.create({
-                data: {
-                  lectureId: id,
-                  entityId: relation.entityId,
-                  relationType: relation.relationType
-                }
-              });
-            }
-          }
-        }
+               await tx.lecturePrerequisite.create({
+                 data: {
+                   lectureId: id,
+                   prerequisiteLectureId: prereq.id,
+                   isRequired: prereq.isRequired !== undefined ? prereq.isRequired : true,
+                   importanceLevel: prereq.importanceLevel || 3
+                 }
+               });
+             }
+           }
+         }
 
-        // Handle prerequisites if provided
-        if (prerequisiteIds !== undefined) {
-          // First delete all current prerequisites
-          await tx.lecturePrerequisite.deleteMany({
-            where: { lectureId: id }
-          });
+         return updatedLecture.id;
+       });
 
-          // Then create the new prerequisites
-          if (prerequisiteIds.length > 0) {
-            for (const prereq of prerequisiteIds) {
-              // Check for circular dependency
-              if (prereq.id === id) {
-                throw new Error('A lecture cannot be a prerequisite of itself');
-              }
+       // After transaction completes, update entity relationships if provided
+       if (entityRelations !== undefined) {
+         await this.updateEntityRelationships(id, entityRelations);
+       }
 
-              await tx.lecturePrerequisite.create({
-                data: {
-                  lectureId: id,
-                  prerequisiteLectureId: prereq.id,
-                  isRequired: prereq.isRequired !== undefined ? prereq.isRequired : true,
-                  importanceLevel: prereq.importanceLevel || 3
-                }
-              });
-            }
-          }
-        }
+       // Fetch the fully populated updated lecture with all relationships
+       const updatedLecture = await prisma.lecture.findUnique({
+         where: { id },
+         include: {
+           entities: true,
+           entityRelations: {
+             include: {
+               entity: true
+             }
+           },
+           prerequisites: {
+             include: {
+               prerequisiteLecture: true
+             }
+           }
+         }
+       });
 
-        // Return the updated lecture with its relationships
-        return await tx.lecture.findUnique({
-          where: { id },
-          include: {
-            entities: true,
-            entityRelations: {
-              include: {
-                entity: true
-              }
-            },
-            prerequisites: {
-              include: {
-                prerequisiteLecture: true
-              }
-            }
-          }
-        });
-      });
+       // Transform the result
+       const transformedResult = transformLectureWithRelations(updatedLecture);
 
-      // Transform the result
-      const transformedResult = transformLectureWithRelations(result);
-
-      return {
-        success: true,
-        data: transformedResult
-      };
-    } catch (error) {
-      console.error('Error updating lecture:', error);
-      return {
-        success: false,
-        error: `Failed to update lecture: ${error.message}`
-      };
-    }
-  }
+       return {
+         success: true,
+         data: transformedResult
+       };
+     } catch (error) {
+       console.error('Error updating lecture:', error);
+       return {
+         success: false,
+         error: `Failed to update lecture: ${error.message}`
+       };
+     }
+   }
 
   /**
    * Delete a lecture
@@ -751,6 +722,80 @@ export class LectureController {
     } catch (error) {
       console.error(`Error checking if lecture exists (ID: ${id}):`, error);
       return false;
+    }
+  }
+  /**
+   * Safely update entity relationships for a lecture
+   * This centralizes the logic for updating lecture-entity relationships
+   */
+  static async updateEntityRelationships(lectureId: string, entityRelations: LectureEntityRelationDTO[]) {
+    try {
+      // First check if lecture exists
+      const exists = await this.lectureExists(lectureId);
+      if (!exists) {
+        return {
+          success: false,
+          error: 'Lecture not found'
+        };
+      }
+
+      // Use transaction to ensure atomicity
+      const result = await prisma.$transaction(async (tx: PrismaClient) => {
+        // Delete all current relations
+        await tx.lectureEntityRelation.deleteMany({
+          where: { lectureId }
+        });
+
+        // Create new relations if provided
+        if (entityRelations && entityRelations.length > 0) {
+          const createdRelations = [];
+
+          for (const relation of entityRelations) {
+            // Verify the entity exists
+            const entity = await tx.philosophicalEntity.findUnique({
+              where: { id: relation.entityId }
+            });
+
+            if (!entity) {
+              throw new Error(`Entity with ID ${relation.entityId} not found`);
+            }
+
+            // Validate relation type
+            if (!Object.values(LECTURE_ENTITY_RELATION_TYPES).includes(relation.relationType)) {
+              throw new Error(`Invalid relation type: ${relation.relationType}`);
+            }
+
+            // Create the relation
+            const created = await tx.lectureEntityRelation.create({
+              data: {
+                lectureId,
+                entityId: relation.entityId,
+                relationType: relation.relationType
+              },
+              include: {
+                entity: true
+              }
+            });
+
+            createdRelations.push(created);
+          }
+
+          return createdRelations;
+        }
+
+        return [];
+      });
+
+      return {
+        success: true,
+        data: transformArray(result, transformLectureEntityRelation)
+      };
+    } catch (error) {
+      console.error('Error updating entity relationships:', error);
+      return {
+        success: false,
+        error: `Failed to update entity relationships: ${error.message}`
+      };
     }
   }
 }
