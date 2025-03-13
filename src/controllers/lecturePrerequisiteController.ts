@@ -38,6 +38,7 @@ import {
   createTransformedResponse
 } from '@/lib/transforms';
 
+import { successResponse, errorResponse, paginatedResponse } from '@/lib/utils/responseUtils';
 
 /**
  * Controller for managing lecture prerequisites
@@ -73,27 +74,19 @@ export class LecturePrerequisiteController {
       // Transform the prerequisites
       const transformedPrerequisites = transformArray(prerequisites, transformLecturePrerequisite);
 
-      return {
-        success: true,
-        data: transformedPrerequisites
-      };
+      // Use successResponse with metadata about the prerequisites
+      return successResponse(transformedPrerequisites, null, {
+        count: transformedPrerequisites.length,
+        lectureId,
+        requiredCount: transformedPrerequisites.filter(p => p.isRequired).length,
+        includeDetails
+      });
+
     } catch (error) {
       console.error('Error fetching prerequisites:', error);
 
-      // Preserve the specific error types
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-      }
-
-      // Generic database error
-      return {
-        success: false,
-        error: `Failed to fetch prerequisites: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -129,27 +122,18 @@ export class LecturePrerequisiteController {
         return transformed;
       });
 
-      return {
-        success: true,
-        data: transformedDependentLectures
-      };
+      // Use successResponse with metadata
+      return successResponse(transformedDependentLectures, null, {
+        count: transformedDependentLectures.length,
+        prerequisiteId,
+        includeDetails
+      });
+
     } catch (error) {
       console.error('Error fetching dependent lectures:', error);
 
-      // Preserve the specific error types
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-      }
-
-      // Generic error
-      return {
-        success: false,
-        error: `Failed to fetch dependent lectures: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -254,47 +238,32 @@ export class LecturePrerequisiteController {
         prerequisiteLecture: transformLecture(prerequisite.prerequisiteLecture)
       };
 
-      return {
-        success: true,
-        data: transformedPrerequisite
-      };
+      // Use successResponse with helpful metadata
+      return successResponse(transformedPrerequisite, 'Prerequisite added successfully', {
+        lectureId,
+        prerequisiteLectureId,
+        isRequired,
+        importanceLevel
+      });
+
     } catch (error) {
       console.error('Error adding prerequisite:', error);
 
-      // Preserve specific error types and additional information
-      if (error instanceof AppError) {
-        const response: any = {
+      // Special handling for circular dependency errors
+      if (error instanceof CircularDependencyError && error.path) {
+        return {
           success: false,
           error: error.message,
-          statusCode: error.statusCode
-        };
-
-        // Handle special properties for different error types
-        if (error instanceof ValidationError && error.invalidFields) {
-          response.invalidFields = error.invalidFields;
-        }
-
-        // For conflict errors with existingId
-        if (error instanceof ConflictError && (error as any).existingId) {
-          response.existingId = (error as any).existingId;
-        }
-
-        // For circular dependency errors
-        if (error instanceof CircularDependencyError && error.path) {
-          response.cycleDetails = {
+          statusCode: error.statusCode,
+          cycleDetails: {
             path: error.path,
             description: `Adding this prerequisite would create a dependency cycle: ${error.path.join(' -> ')}`
-          };
-        }
-
-        return response;
+          }
+        };
       }
-
-      // Generic database error
-      return {
-        success: false,
-        error: `Failed to add prerequisite: ${error.message}`
-      };
+      
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -353,34 +322,19 @@ export class LecturePrerequisiteController {
         prerequisiteLecture: transformLecture(updatedPrerequisite.prerequisiteLecture)
       };
 
-      return {
-        success: true,
-        data: transformedPrerequisite
-      };
+      // Use successResponse with helpful metadata
+      return successResponse(transformedPrerequisite, 'Prerequisite updated successfully', {
+        id,
+        updatedFields: Object.keys(data),
+        lectureId: updatedPrerequisite.lectureId,
+        prerequisiteLectureId: updatedPrerequisite.prerequisiteLectureId
+      });
+
     } catch (error) {
       console.error('Error updating prerequisite:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        const response: any = {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-
-        // Add validation fields if this is a validation error
-        if (error instanceof ValidationError && error.invalidFields) {
-          response.invalidFields = error.invalidFields;
-        }
-
-        return response;
-      }
-
-      // Generic error
-      return {
-        success: false,
-        error: `Failed to update prerequisite: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -398,32 +352,28 @@ export class LecturePrerequisiteController {
         throw new NotFoundError(`Prerequisite with ID ${id} not found`);
       }
 
+      // Store some info for the response
+      const { lectureId, prerequisiteLectureId } = prerequisite;
+
       // Delete the prerequisite
       await prisma.lecturePrerequisite.delete({
         where: { id }
       });
 
-      return {
-        success: true,
-        message: 'Prerequisite removed successfully'
-      };
+      // Use successResponse with metadata about what was removed
+      return successResponse(null, 'Prerequisite removed successfully', {
+        id,
+        lectureId,
+        prerequisiteLectureId,
+        isRequired: prerequisite.isRequired,
+        importanceLevel: prerequisite.importanceLevel
+      });
+
     } catch (error) {
       console.error('Error removing prerequisite:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-      }
-
-      // Generic database error
-      return {
-        success: false,
-        error: `Failed to remove prerequisite: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -455,31 +405,26 @@ export class LecturePrerequisiteController {
       }
 
       // Use the centralized prerequisite checking utility
-      return await this.checkAndCategorizePrerequisites(lectureId, userId);
+      const result = await this.checkAndCategorizePrerequisites(lectureId, userId);
+
+      // If the result was successful, wrap it with successResponse
+      if (result.success) {
+        return successResponse(result.data, null, {
+          userId,
+          lectureId,
+          satisfied: result.data.satisfied,
+          readinessScore: result.data.readinessScore
+        });
+      }
+
+      // If there was an error, just return the error result
+      return result;
+
     } catch (error) {
       console.error('Error checking prerequisites:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        const response: any = {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-
-        // Add validation fields if this is a validation error
-        if (error instanceof ValidationError && error.invalidFields) {
-          response.invalidFields = error.invalidFields;
-        }
-
-        return response;
-      }
-
-      // Generic error
-      return {
-        success: false,
-        error: `Failed to check prerequisites: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -655,34 +600,24 @@ export class LecturePrerequisiteController {
       }
 
       // Transform the results
-      return {
-        success: true,
-        data: transformArray(filteredResults, transformLectureAvailability)
-      };
+      const transformedResults = transformArray(filteredResults, transformLectureAvailability);
+
+      // Use successResponse with meaningful metadata
+      return successResponse(transformedResults, null, {
+        userId,
+        category,
+        totalCount: transformedResults.length,
+        completedCount: transformedResults.filter(r => r.isCompleted).length,
+        inProgressCount: transformedResults.filter(r => r.isInProgress).length,
+        availableCount: transformedResults.filter(r => r.isAvailable).length,
+        lockedCount: transformedResults.filter(r => !r.isAvailable && !r.isCompleted && !r.isInProgress).length
+      });
+
     } catch (error) {
       console.error('Error checking prerequisites:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        const response: any = {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-
-        // Add validation fields if this is a validation error
-        if (error instanceof ValidationError && error.invalidFields) {
-          response.invalidFields = error.invalidFields;
-        }
-
-        return response;
-      }
-
-      // Generic error
-      return {
-        success: false,
-        error: `Failed to retrieve available lectures: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -754,34 +689,24 @@ export class LecturePrerequisiteController {
       // Take the requested number of suggestions
       const suggestions = sortedLectures.slice(0, limit);
 
-      // Transform the suggestions
-      return {
-        success: true,
-        data: transformArray(suggestions, transformLectureAvailability)
-      };
+      // Transform and return the suggestions
+      const transformedSuggestions = transformArray(suggestions, transformLectureAvailability);
+
+      // Use successResponse with helpful metadata
+      return successResponse(transformedSuggestions, null, {
+        userId,
+        category,
+        limit,
+        totalAvailable: candidateLectures.length,
+        suggestionsCount: transformedSuggestions.length,
+        inProgressCount: transformedSuggestions.filter(s => s.isInProgress).length
+      });
+
     } catch (error) {
       console.error('Error suggesting next lectures:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        const response: any = {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-
-        if (error instanceof ValidationError && error.invalidFields) {
-          response.invalidFields = error.invalidFields;
-        }
-
-        return response;
-      }
-
-      // Generic error
-      return {
-        success: false,
-        error: `Failed to suggest next lectures: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -976,18 +901,19 @@ export class LecturePrerequisiteController {
 
       // If no prerequisites, the conditions are satisfied
       if (prerequisites.length === 0) {
-        return {
-          success: true,
-          data: {
-            satisfied: true,
-            requiredPrerequisites: [],
-            completedPrerequisites: [],
-            missingRequiredPrerequisites: [],
-            recommendedPrerequisites: [],
-            completedRecommendedPrerequisites: [],
-            readinessScore: 100 // Full score if no prerequisites
-          }
-        };
+        // Using successResponse for the no prerequisites case
+        return successResponse({
+          satisfied: true,
+          requiredPrerequisites: [],
+          completedPrerequisites: [],
+          missingRequiredPrerequisites: [],
+          recommendedPrerequisites: [],
+          completedRecommendedPrerequisites: [],
+          readinessScore: 100 // Full score if no prerequisites
+        }, 'No prerequisites required for this lecture', {
+          lectureId,
+          userId
+        });
       }
 
       // Get the user's progress for all prerequisites
@@ -1061,34 +987,27 @@ export class LecturePrerequisiteController {
         readinessScore
       };
 
-      return {
-        success: true,
-        data: transformPrerequisiteCheckResult(prerequisitesResult)
-      };
+      // Use successResponse with appropriate message and metadata
+      return successResponse(
+        transformPrerequisiteCheckResult(prerequisitesResult),
+        satisfied ? 'All required prerequisites satisfied' : 'Some prerequisites not satisfied',
+        {
+          lectureId,
+          userId,
+          satisfied,
+          readinessScore,
+          requiredCount: requiredPrerequisites.length,
+          completedRequiredCount: completedRequiredPrerequisites.length,
+          recommendedCount: recommendedPrerequisites.length,
+          completedRecommendedCount: completedRecommendedPrerequisites.length
+        }
+      );
+
     } catch (error) {
       console.error('Error checking prerequisites:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        const response: any = {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-
-        // Add validation fields if this is a validation error
-        if (error instanceof ValidationError && error.invalidFields) {
-          response.invalidFields = error.invalidFields;
-        }
-
-        return response;
-      }
-
-      // Generic error
-      return {
-        success: false,
-        error: `Failed to check prerequisites: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 }

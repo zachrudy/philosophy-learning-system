@@ -38,6 +38,9 @@ import {
   DependencyError
 } from '@/lib/errors/appErrors';
 
+// Add this to the existing imports in src/controllers/lectureController.ts
+import { successResponse, errorResponse, paginatedResponse } from '@/lib/utils/responseUtils';
+
 /**
  * Standard success response type
  */
@@ -169,37 +172,34 @@ export class LectureController {
         ]
       });
 
-      // Transform the results and create a paginated response
-      const paginationMeta = {
-        total,
+      // Transform the results
+      const transformedLectures = transformArray(lectures, transformLectureWithRelations);
+
+      // Use the new paginatedResponse utility
+      return paginatedResponse(transformedLectures, {
         page,
         limit,
-        totalPages: Math.ceil(total / limit)
-      };
-
-      return {
-        success: true,
-        data: transformArray(lectures, transformLectureWithRelations),
-        pagination: paginationMeta
-      };
+        total,
+        additionalMetadata: {
+          filters: {
+            category,
+            lecturerName,
+            contentType,
+            search
+          }
+        }
+      });
     } catch (error) {
       console.error('Error fetching lectures:', error);
 
+      // Use the new errorResponse utility
       if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
+        return errorResponse(error);
       }
 
       // Wrap unknown errors as DatabaseError
       const dbError = new DatabaseError('Failed to fetch lectures');
-      return {
-        success: false,
-        error: dbError.message,
-        statusCode: dbError.statusCode
-      };
+      return errorResponse(dbError);
     }
   }
 
@@ -270,28 +270,21 @@ export class LectureController {
       // Transform the lecture data
       const transformedLecture = transformLectureWithRelations(lecture);
 
-      return {
-        success: true,
-        data: transformedLecture
-      };
+      // Use the successResponse utility
+      return successResponse(transformedLecture, null, {
+        includeOptions: options
+      });
     } catch (error) {
       console.error('Error fetching lecture:', error);
 
+      // Use errorResponse utility for consistent error handling
       if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
+        return errorResponse(error);
       }
 
       // Wrap unknown errors
       const dbError = new DatabaseError(`Failed to fetch lecture: ${error.message}`);
-      return {
-        success: false,
-        error: dbError.message,
-        statusCode: dbError.statusCode
-      };
+      return errorResponse(dbError);
     }
   }
 
@@ -437,29 +430,16 @@ export class LectureController {
       // Transform the result
       const transformedResult = transformLectureWithRelations(completeLecture);
 
-      return {
-        success: true,
-        data: transformedResult
-      };
+      // Use successResponse with HTTP 201 Created implied
+      return successResponse(transformedResult, 'Lecture created successfully', {
+        created: true,
+        id: result
+      });
     } catch (error) {
       console.error('Error creating lecture:', error);
 
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode,
-          ...(error instanceof ValidationError && error.invalidFields ? { invalidFields: error.invalidFields } : {})
-        };
-      }
-
-      // Wrap unknown errors
-      const dbError = new DatabaseError(`Failed to create lecture: ${error.message}`);
-      return {
-        success: false,
-        error: dbError.message,
-        statusCode: dbError.statusCode
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -581,35 +561,18 @@ export class LectureController {
       // Transform the result
       const transformedResult = transformLectureWithRelations(updatedLecture);
 
-      return {
-        success: true,
-        data: transformedResult
-      };
+      // Use successResponse with helpful metadata
+      return successResponse(transformedResult, 'Lecture updated successfully', {
+        updated: true,
+        id: id,
+        changedFields: Object.keys(data)
+      });
+
     } catch (error) {
       console.error('Error updating lecture:', error);
 
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode,
-          ...(error instanceof ValidationError && error.invalidFields ? { invalidFields: error.invalidFields } : {}),
-          ...(error instanceof CircularDependencyError && error.path ? {
-            cycleDetails: {
-              path: error.path,
-              description: `Adding this prerequisite would create a dependency cycle: ${error.path.join(' -> ')}`
-            }
-          } : {})
-        };
-      }
-
-      // Wrap unknown errors
-      const dbError = new DatabaseError(`Failed to update lecture: ${error.message}`);
-      return {
-        success: false,
-        error: dbError.message,
-        statusCode: dbError.statusCode
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -668,38 +631,21 @@ export class LectureController {
       // After deletion, rebalance the order in the category
       await this.rebalanceOrderInCategory(lecture.category, lecture.order);
 
-      return {
-        success: true,
-        message: 'Lecture deleted successfully'
-      };
+      // Use successResponse with meaningful message and metadata
+      return successResponse(null, 'Lecture deleted successfully', {
+        deletedId: id,
+        category: lecture.category,
+        rebalanced: true
+      });
+
     } catch (error) {
       console.error('Error deleting lecture:', error);
 
-      // Preserve specific error types
-      if (error instanceof AppError) {
-        const response: any = {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-
-        // For dependency errors, include dependencies
-        if (error instanceof DependencyError && error.dependencies) {
-          response.dependencies = error.dependencies;
-        }
-
-        return response;
-      }
-
-      // Generic database error
-      return {
-        success: false,
-        error: `Failed to delete lecture: ${error.message}`
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
-  
   /**
    * Get all entity relationships for a lecture
    */
@@ -723,28 +669,17 @@ export class LectureController {
       const transformedRelations = transformArray(entityRelations,
                                     (relation) => transformLectureEntityRelation(relation));
 
-      return {
-        success: true,
-        data: transformedRelations
-      };
+      // Use successResponse with count metadata
+      return successResponse(transformedRelations, null, {
+        count: transformedRelations.length,
+        lectureId
+      });
+
     } catch (error) {
       console.error('Error fetching lecture entity relations:', error);
 
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode
-        };
-      }
-
-      // Wrap unknown errors
-      const dbError = new DatabaseError(`Failed to fetch lecture entity relations: ${error.message}`);
-      return {
-        success: false,
-        error: dbError.message,
-        statusCode: dbError.statusCode
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 
@@ -866,6 +801,7 @@ export class LectureController {
       return false;
     }
   }
+
   /**
    * Safely update entity relationships for a lecture
    * This centralizes the logic for updating lecture-entity relationships
@@ -927,29 +863,20 @@ export class LectureController {
         return [];
       });
 
-      return {
-        success: true,
-        data: transformArray(result, transformLectureEntityRelation)
-      };
+      // Transform the created relationships
+      const transformedRelations = transformArray(result, transformLectureEntityRelation);
+
+      // Use successResponse with helpful metadata
+      return successResponse(transformedRelations, 'Entity relationships updated successfully', {
+        count: transformedRelations.length,
+        lectureId: lectureId
+      });
+
     } catch (error) {
       console.error('Error updating entity relationships:', error);
 
-      if (error instanceof AppError) {
-        return {
-          success: false,
-          error: error.message,
-          statusCode: error.statusCode,
-          ...(error instanceof ValidationError && error.invalidFields ? { invalidFields: error.invalidFields } : {})
-        };
-      }
-
-      // Wrap unknown errors
-      const dbError = new DatabaseError(`Failed to update entity relationships: ${error.message}`);
-      return {
-        success: false,
-        error: dbError.message,
-        statusCode: dbError.statusCode
-      };
+      // Use errorResponse for consistent error handling
+      return errorResponse(error);
     }
   }
 }

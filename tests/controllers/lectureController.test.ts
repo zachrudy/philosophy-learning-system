@@ -64,7 +64,7 @@ describe('LectureController', () => {
       // Assertions
       expect(result.success).toBe(true);
       expect(result.data).toHaveLength(mockLectures.length);
-      expect(result.pagination).toEqual({
+      expect(result.metadata.pagination).toEqual({
         total: mockLectures.length,
         page: 1,
         limit: 10,
