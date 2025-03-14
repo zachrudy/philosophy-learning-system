@@ -1,4 +1,4 @@
-// tests/api/lectures.test.ts
+// tests/api/lectures-id.test.ts
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { NextRequest } from 'next/server';
 import { GET as getLecture, PATCH as updateLecture, DELETE as deleteLecture } from '@/app/api/lectures/[id]/route';
