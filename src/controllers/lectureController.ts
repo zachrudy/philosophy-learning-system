@@ -21,6 +21,7 @@ import { validateLecture } from '@/lib/validation/lectureValidation';
 import {
   transformLecture,
   transformLectureWithRelations,
+  transformLectureEntityRelation,  
   createApiResponse,
   createPaginatedResponse,
   transformArray,
