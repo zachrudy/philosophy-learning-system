@@ -11,11 +11,19 @@ const purify = DOMPurify(window);
 /**
  * Validates a URL string
  */
-export function validateUrl(url: string): boolean {
-  // URL format validation with support for both http:// and https:// as well as relative URLs
-  const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$|^\/[/\w .-]*$/;
-  return urlRegex.test(url);
-}
+ export function validateUrl(url: string): boolean {
+   try {
+     // Let the URL constructor handle validation
+     new URL(url.startsWith('http') ? url : `https://${url}`);
+     return true;
+   } catch (error) {
+     // If it's a relative URL, consider it valid
+     if (url.startsWith('/')) {
+       return true;
+     }
+     return false;
+   }
+ }
 
 /**
  * Normalizes a URL - ensuring it has proper protocol

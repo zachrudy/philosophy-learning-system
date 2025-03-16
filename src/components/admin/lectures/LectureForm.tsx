@@ -115,7 +115,14 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    // Special handling for numeric fields
+    if (name === 'order') {
+      // Ensure it's a positive number (including zero)
+      const numValue = parseInt(value, 10);
+      setFormData(prev => ({ ...prev, [name]: isNaN(numValue) ? 1 : numValue }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   // Handle checkbox change

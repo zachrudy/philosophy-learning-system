@@ -21,7 +21,7 @@ import { validateLecture } from '@/lib/validation/lectureValidation';
 import {
   transformLecture,
   transformLectureWithRelations,
-  transformLectureEntityRelation,  
+  transformLectureEntityRelation,
   createApiResponse,
   createPaginatedResponse,
   transformArray,
@@ -477,7 +477,7 @@ export class LectureController {
       const sanitizedData = validation.sanitizedData!;
 
       // Extract entity relationships and prerequisites for separate handling
-      const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
+      const { entityIds, entityRelations, prerequisiteIds, prerequisites, prerequisiteFor, ...lectureData } = data;
 
       // Use transaction to ensure atomicity
       const result = await prisma.$transaction(async (tx: PrismaClient) => {
