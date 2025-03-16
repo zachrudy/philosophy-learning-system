@@ -48,14 +48,14 @@ export const RELATION_TYPES = {
 
 export type RelationType = keyof typeof RELATION_TYPES;
 
-// New constant for lecture-entity relation types
+// Relation types between lectures and philosophical entities
 export const LECTURE_ENTITY_RELATION_TYPES = {
-  INTRODUCES: "introduces",
-  EXPANDS: "expands",
-  CRITIQUES: "critiques",
-  APPLIES: "applies",
-  CONTEXTUALIZES: "contextualizes",
-  COMPARES: "compares"
+  INTRODUCES: "introduces",       // First presentation of the entity
+  EXPANDS: "expands",             // Further development of the entity
+  CRITIQUES: "critiques",         // Critical analysis of the entity
+  APPLIES: "applies",             // Application of the entity to other contexts
+  CONTEXTUALIZES: "contextualizes", // Places the entity in broader context
+  COMPARES: "compares"            // Compares the entity with other entities
 } as const;
 
 export type LectureEntityRelationType = keyof typeof LECTURE_ENTITY_RELATION_TYPES;

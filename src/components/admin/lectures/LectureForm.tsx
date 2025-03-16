@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PrerequisiteSelect from './PrerequisiteSelect';
+import EntityRelationshipSelect from './EntityRelationshipSelect';
 
-// Define the lecture type
 // Define prerequisite type
 interface Prerequisite {
   id: string;
@@ -13,6 +13,13 @@ interface Prerequisite {
   importanceLevel: number;
 }
 
+// Define entity relationship type
+interface EntityRelationship {
+  entityId: string;
+  relationType: string;
+}
+
+// Define the lecture type
 interface Lecture {
   id?: string;
   title: string;
@@ -30,6 +37,7 @@ interface Lecture {
   evaluationPrompt: string;
   discussionPrompts: string;
   prerequisiteIds?: Prerequisite[]; // Array of prerequisite IDs with metadata
+  entityRelations?: EntityRelationship[]; // Array of entity relationships
 }
 
 interface LectureFormProps {
