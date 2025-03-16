@@ -77,6 +77,10 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
     initialData?.prerequisiteIds || []
   );
 
+  const [entityRelationships, setEntityRelationships] = useState<EntityRelationship[]>(
+    initialData?.entityRelationships || []
+  );
+
   const isEditMode = !!lectureId;
 
   // Fetch lecture data if editing
@@ -106,6 +110,11 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
             }));
             setPrerequisites(mappedPrerequisites);
           }
+          // Extract lecture-entity relationships if they exist
+          if (data.entityRelationships) {
+            setEntityRelationships(data.entityRelationships);
+          }
+
         } catch (err) {
           console.error('Error fetching lecture:', err);
           setError(err instanceof Error ? err.message : 'An error occurred');
@@ -137,6 +146,10 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, checked } = e.target;
     setFormData(prev => ({ ...prev, [name]: checked }));
+  };
+
+  const handleEntityRelationshipChange = (relationships: EntityRelationship[]) => {
+    setEntityRelationships(relationships);
   };
 
   // Process and submit the form
@@ -182,7 +195,8 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
       // Prepare the data to send
       const dataToSubmit = {
         ...formData,
-        prerequisiteIds: prerequisites.length > 0 ? prerequisites : undefined
+        prerequisiteIds: prerequisites.length > 0 ? prerequisites : undefined,
+        entityRelationships: entityRelationships.length > 0 ? entityRelationships : undefined
       };
 
       // Prepare the API request
@@ -542,6 +556,19 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
                       lectureId={lectureId}
                       selectedPrerequisites={prerequisites}
                       onChange={setPrerequisites}
+                    />
+                  </div>
+                  {/* Entity Relationships Section */}
+                  <div className="col-span-6 mt-4">
+                    <h4 className="text-md font-medium text-gray-700 mb-3">Entity Relationships</h4>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Connect this lecture to philosophical entities and specify how they relate.
+                    </p>
+
+                    <EntityRelationshipSelect
+                      lectureId={lectureId}
+                      initialRelationships={entityRelationships}
+                      onChange={handleEntityRelationshipChange}
                     />
                   </div>
                 </div>

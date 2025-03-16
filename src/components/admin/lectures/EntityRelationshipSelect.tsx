@@ -41,6 +41,10 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
   // Map of entity IDs to their full data for easy lookup
   const [entityMap, setEntityMap] = useState<Record<string, PhilosophicalEntity>>({});
+  // Track which entities have their relationship panel open
+  const [openRelationPanels, setOpenRelationPanels] = useState<Record<string, boolean>>({});
+  // Relation types from service
+  const relationTypes = EntityRelationshipService.getRelationTypes();
 
   // Load all philosophical entities
   useEffect(() => {
@@ -88,8 +92,16 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
 
       try {
         const existingRelationships = await EntityRelationshipService.getRelationshipsForLecture(lectureId);
-
         setRelationships(existingRelationships);
+
+        // Open relation panels for entities that already have relationships
+        const entityIds = new Set(existingRelationships.map(rel => rel.entityId));
+        const panelState: Record<string, boolean> = {};
+        entityIds.forEach(id => {
+          panelState[id] = true;
+        });
+        setOpenRelationPanels(panelState);
+
         // Call onChange to sync with parent component
         onChange(existingRelationships);
       } catch (err) {
@@ -123,25 +135,40 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
 
   // Toggle selection of an entity
   const toggleEntitySelection = (entityId: string) => {
-    const isSelected = relationships.some(rel => rel.entityId === entityId);
+    const isSelected = isEntitySelected(entityId);
 
     if (isSelected) {
       // Remove all relationships with this entity
       const updatedRelationships = relationships.filter(rel => rel.entityId !== entityId);
       setRelationships(updatedRelationships);
       onChange(updatedRelationships);
+
+      // Close the relation panel
+      setOpenRelationPanels(prev => ({
+        ...prev,
+        [entityId]: false
+      }));
     } else {
-      // Add a default relationship
-      const defaultRelationType = Object.values(LECTURE_ENTITY_RELATION_TYPES)[0];
-      const newRelationship = { entityId, relationType: defaultRelationType };
-      const updatedRelationships = [...relationships, newRelationship];
+      // When selecting an entity, add it with at least one default relationship type
+      const defaultRelationType = relationTypes[0].value;
+      const updatedRelationships = [
+        ...relationships,
+        { entityId, relationType: defaultRelationType }
+      ];
+
       setRelationships(updatedRelationships);
       onChange(updatedRelationships);
+
+      // Open the relation panel for selection
+      setOpenRelationPanels(prev => ({
+        ...prev,
+        [entityId]: true
+      }));
     }
   };
 
-  // Update the relationship type
-  const updateRelationshipType = (entityId: string, relationType: string) => {
+  // Toggle a specific relationship type for an entity
+  const toggleRelationshipType = (entityId: string, relationType: string) => {
     // Validate the relation type
     if (!validateRelationType(relationType)) {
       console.error(`Invalid relation type: ${relationType}`);
@@ -153,27 +180,31 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
       rel => rel.entityId === entityId && rel.relationType === relationType
     );
 
+    let updatedRelationships: EntityRelationship[];
+
     if (existingIndex >= 0) {
       // If it exists, remove it (toggle behavior)
-      const updatedRelationships = [...relationships];
-      updatedRelationships.splice(existingIndex, 1);
-
-      // If this was the only relationship for this entity, remove the entity completely
-      if (!updatedRelationships.some(rel => rel.entityId === entityId)) {
-        setRelationships(updatedRelationships);
-        onChange(updatedRelationships);
-        return;
-      }
-
-      setRelationships(updatedRelationships);
-      onChange(updatedRelationships);
+      updatedRelationships = relationships.filter(
+        (_, index) => index !== existingIndex
+      );
     } else {
       // Add this relationship
-      const newRelationship = { entityId, relationType };
-      const updatedRelationships = [...relationships, newRelationship];
-      setRelationships(updatedRelationships);
-      onChange(updatedRelationships);
+      updatedRelationships = [
+        ...relationships,
+        { entityId, relationType }
+      ];
     }
+
+    setRelationships(updatedRelationships);
+    onChange(updatedRelationships);
+  };
+
+  // Toggle relation panel for an entity
+  const toggleRelationPanel = (entityId: string) => {
+    setOpenRelationPanels(prev => ({
+      ...prev,
+      [entityId]: !prev[entityId]
+    }));
   };
 
   // Toggle expansion of an entity type
@@ -184,7 +215,7 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
     }));
   };
 
-  // Check if an entity is selected
+  // Check if an entity is selected (has any relationship)
   const isEntitySelected = (entityId: string) => {
     return relationships.some(rel => rel.entityId === entityId);
   };
@@ -201,6 +232,11 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
     return relationships
       .filter(rel => rel.entityId === entityId)
       .map(rel => rel.relationType);
+  };
+
+  // Get a count of relationship types for an entity
+  const getRelationshipCountForEntity = (entityId: string) => {
+    return relationships.filter(rel => rel.entityId === entityId).length;
   };
 
   if (loading) {
@@ -252,39 +288,65 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
 
                 {/* Entities list, shown only if expanded */}
                 {expandedTypes[type] && (
-                  <div className="p-4 divide-y">
+                  <div className="divide-y">
                     {typeEntities.map(entity => (
-                      <div key={entity.id} className="py-2">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            id={`entity-${entity.id}`}
-                            checked={isEntitySelected(entity.id)}
-                            onChange={() => toggleEntitySelection(entity.id)}
-                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label
-                            htmlFor={`entity-${entity.id}`}
-                            className="ml-2 block text-sm font-medium text-gray-700"
-                          >
-                            {entity.name}
-                          </label>
+                      <div key={entity.id} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              id={`entity-${entity.id}`}
+                              checked={isEntitySelected(entity.id)}
+                              onChange={() => toggleEntitySelection(entity.id)}
+                              className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label
+                              htmlFor={`entity-${entity.id}`}
+                              className="ml-2 block text-sm font-medium text-gray-700"
+                            >
+                              {entity.name}
+                            </label>
+                          </div>
+
+                          {isEntitySelected(entity.id) && (
+                            <div className="flex items-center">
+                              <span className="text-xs text-gray-500 mr-2">
+                                {getRelationshipCountForEntity(entity.id)} relationship{getRelationshipCountForEntity(entity.id) !== 1 ? 's' : ''}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleRelationPanel(entity.id)}
+                                className="text-sm text-blue-600 hover:text-blue-800"
+                              >
+                                {openRelationPanels[entity.id] ? 'Hide' : 'Edit'}
+                              </button>
+                            </div>
+                          )}
                         </div>
 
-                        {/* Show relationship type selection if entity is selected */}
-                        {isEntitySelected(entity.id) && (
-                          <div className="ml-6 mt-2">
-                            <p className="text-xs text-gray-500 mb-1">Relationship types:</p>
+                        {/* Entity description (if available) */}
+                        {entity.description && (
+                          <p className="mt-1 ml-6 text-xs text-gray-500 line-clamp-2">
+                            {entity.description}
+                          </p>
+                        )}
+
+                        {/* Relationship type selection */}
+                        {(isEntitySelected(entity.id) && openRelationPanels[entity.id]) && (
+                          <div className="ml-6 mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                            <p className="text-xs text-gray-600 mb-2 font-medium">
+                              Select relationship types:
+                            </p>
                             <div className="flex flex-wrap gap-2">
-                              {EntityRelationshipService.getRelationTypes().map(({ key, value, display }) => (
+                              {relationTypes.map(({ key, value, display }) => (
                                 <button
                                   key={key}
                                   type="button"
-                                  onClick={() => updateRelationshipType(entity.id, value)}
-                                  className={`px-2 py-1 text-xs font-medium rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                                  onClick={() => toggleRelationshipType(entity.id, value)}
+                                  className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 ${
                                     isRelationshipSelected(entity.id, value)
-                                      ? 'bg-blue-100 text-blue-800'
-                                      : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                   }`}
                                 >
                                   {display}
@@ -294,6 +356,13 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
                                 </button>
                               ))}
                             </div>
+
+                            {/* Helper text for relationship selection */}
+                            <p className="mt-2 text-xs text-gray-500">
+                              {getRelationshipTypesForEntity(entity.id).length === 0
+                                ? 'Please select at least one relationship type above or uncheck this entity.'
+                                : 'You can select multiple relationship types for this entity.'}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -309,31 +378,55 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
       {/* Selected Relationships Summary */}
       {relationships.length > 0 && (
         <div>
-          <h4 className="text-md font-medium text-gray-700 mb-3">Selected Relationships</h4>
+          <h4 className="text-md font-medium text-gray-700 mb-3">Selected Relationships Summary</h4>
           <div className="border rounded-md divide-y">
-            {relationships.map((relationship, index) => {
-              const entity = entityMap[relationship.entityId];
+            {/* Group by entity for the summary */}
+            {Object.entries(
+              relationships.reduce((acc, relationship) => {
+                const { entityId } = relationship;
+                if (!acc[entityId]) {
+                  acc[entityId] = [];
+                }
+                acc[entityId].push(relationship);
+                return acc;
+              }, {} as Record<string, EntityRelationship[]>)
+            ).map(([entityId, entityRelationships]) => {
+              const entity = entityMap[entityId];
               if (!entity) return null;
 
               return (
-                <div key={`${relationship.entityId}-${relationship.relationType}`} className="p-4">
+                <div key={entityId} className="p-4">
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-sm font-medium text-gray-800">{entity.name}</p>
                       <p className="text-xs text-gray-500">{entity.type}</p>
-                      <div className="mt-1">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {EntityRelationshipService.getRelationTypeDisplayName(relationship.relationType)}
-                        </span>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {entityRelationships.map((relationship, index) => (
+                          <span
+                            key={`${entityId}-${relationship.relationType}-${index}`}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {EntityRelationshipService.getRelationTypeDisplayName(relationship.relationType)}
+                          </span>
+                        ))}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => updateRelationshipType(entity.id, relationship.relationType)}
-                      className="text-red-500 hover:text-red-700 text-sm"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleRelationPanel(entityId)}
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleEntitySelection(entityId)}
+                        className="text-red-500 hover:text-red-700 text-sm"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -341,9 +434,6 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
           </div>
         </div>
       )}
-
-      {/* Reverse Relationships Section (future enhancement) */}
-      {/* This would show where entities are referenced in other lectures */}
     </div>
   );
 };
