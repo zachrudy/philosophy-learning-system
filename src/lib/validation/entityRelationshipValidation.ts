@@ -5,27 +5,33 @@ import { LectureEntityRelationDTO } from '@/types/models';
 /**
  * Validates that a relation type is one of the allowed values
  */
-export function validateRelationType(relationType: string): boolean {
-  return Object.values(LECTURE_ENTITY_RELATION_TYPES).includes(relationType);
-}
+ export function validateRelationType(relationType: string): boolean {
+   if (!relationType) return false;
+
+   // Case-insensitive comparison
+   const normalizedType = relationType.toLowerCase();
+   const validTypes = Object.values(LECTURE_ENTITY_RELATION_TYPES).map(type =>
+     typeof type === 'string' ? type.toLowerCase() : type
+   );
+
+   return validTypes.includes(normalizedType);
+ }
 
 /**
  * Normalizes a relation type to ensure it matches one of the allowed values
  * If the type doesn't match, returns the default 'introduces' type
  */
 export function normalizeRelationType(relationType: string): string {
-  if (validateRelationType(relationType)) {
-    return relationType;
-  }
+  if (!relationType) return LECTURE_ENTITY_RELATION_TYPES.INTRODUCES;
 
-  // Try to match by case-insensitive comparison
-  const lowerRelationType = relationType.toLowerCase();
-  const match = Object.values(LECTURE_ENTITY_RELATION_TYPES).find(type =>
-    type.toLowerCase() === lowerRelationType
-  );
+  // Case-insensitive validation
+  const normalizedType = relationType.toLowerCase();
 
-  if (match) {
-    return match;
+  // Check for exact match first (case-insensitive)
+  for (const [key, value] of Object.entries(LECTURE_ENTITY_RELATION_TYPES)) {
+    if (typeof value === 'string' && value.toLowerCase() === normalizedType) {
+      return value; // Return the properly cased version from constants
+    }
   }
 
   // Return the default type if no match
@@ -52,13 +58,18 @@ export function validateEntityRelationship(
 
   if (!relationship.relationType) {
     errors.push('Relation type is required');
-  } else if (!validateRelationType(relationship.relationType)) {
-    errors.push(`Invalid relation type: "${relationship.relationType}"`);
-    // Still normalize the relation type for the sanitized data
-    sanitizedData.relationType = normalizeRelationType(relationship.relationType);
-  }
+  } else {
+    // Always normalize the relation type
+    const normalizedType = normalizeRelationType(relationship.relationType);
 
-  // Lecture ID validation is handled by the caller or API layer
+    // If the normalized type doesn't match the original (case-insensitive), it's invalid
+    if (normalizedType.toLowerCase() !== relationship.relationType.toLowerCase()) {
+      errors.push(`Invalid relation type: "${relationship.relationType}"`);
+    }
+
+    // Always set the normalized type in sanitized data
+    sanitizedData.relationType = normalizedType;
+  }
 
   return {
     valid: errors.length === 0,
@@ -102,11 +113,11 @@ export function validateEntityRelationships(
     sanitizedData.push(validation.sanitizedData || {});
   });
 
-  // Check for duplicate relationships (same entity + relation type)
+  // Check for duplicate relationships (same entity + relation type, case-insensitive)
   const seenCombinations = new Set<string>();
   relationships.forEach((relationship, index) => {
     if (relationship.entityId && relationship.relationType) {
-      const key = `${relationship.entityId}|${relationship.relationType}`;
+      const key = `${relationship.entityId}|${relationship.relationType.toLowerCase()}`;
       if (seenCombinations.has(key)) {
         errors.push(`Relationship #${index + 1}: Duplicate entity-relation type combination`);
       } else {
@@ -135,11 +146,6 @@ export function checkRelationshipConsistency(
   warnings: string[];
 } {
   // This function can be expanded in the future to implement domain-specific rules
-  // For example:
-  // - Warning if multiple lectures "introduce" the same concept
-  // - Warning if a lecture "critiques" a concept without "introducing" it first
-
-  // For now, we return always consistent with no warnings
   return {
     consistent: true,
     warnings: []

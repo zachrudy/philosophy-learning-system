@@ -58,7 +58,25 @@ export const LECTURE_ENTITY_RELATION_TYPES = {
   COMPARES: "compares"            // Compares the entity with other entities
 } as const;
 
-export type LectureEntityRelationType = keyof typeof LECTURE_ENTITY_RELATION_TYPES;
+export type LectureEntityRelationType =
+  | "introduces"
+  | "expands"
+  | "critiques"
+  | "applies"
+  | "contextualizes"
+  | "compares";
+
+// Helper function to check if a string is a valid relation type
+export function isValidLectureEntityRelationType(type: string): boolean {
+  if (!type) return false;
+
+  const normalizedType = type.toLowerCase().trim();
+  const validTypes = Object.values(LECTURE_ENTITY_RELATION_TYPES).map(t =>
+    typeof t === 'string' ? t.toLowerCase() : t
+  );
+
+  return validTypes.includes(normalizedType);
+}
 
 // Reflection status types
 export const REFLECTION_STATUS = {

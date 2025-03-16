@@ -169,15 +169,15 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
 
   // Toggle a specific relationship type for an entity
   const toggleRelationshipType = (entityId: string, relationType: string) => {
-    // Validate the relation type
-    if (!validateRelationType(relationType)) {
-      console.error(`Invalid relation type: ${relationType}`);
-      return;
-    }
+    // Ensure the relation type is in the correct format from our constants
+    const canonicalType = Object.values(LECTURE_ENTITY_RELATION_TYPES).find(
+      type => type.toLowerCase() === relationType.toLowerCase()
+    ) || LECTURE_ENTITY_RELATION_TYPES.INTRODUCES;
 
-    // Check if this entity-relationType combination already exists
+    // Check if this entity-relationType combination already exists (case-insensitive)
     const existingIndex = relationships.findIndex(
-      rel => rel.entityId === entityId && rel.relationType === relationType
+      rel => rel.entityId === entityId &&
+             rel.relationType.toLowerCase() === canonicalType.toLowerCase()
     );
 
     let updatedRelationships: EntityRelationship[];
@@ -188,10 +188,10 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
         (_, index) => index !== existingIndex
       );
     } else {
-      // Add this relationship
+      // Add this relationship with the canonical type from constants
       updatedRelationships = [
         ...relationships,
-        { entityId, relationType }
+        { entityId, relationType: canonicalType }
       ];
     }
 
@@ -223,7 +223,8 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
   // Check if a specific relationship type is selected for an entity
   const isRelationshipSelected = (entityId: string, relationType: string) => {
     return relationships.some(
-      rel => rel.entityId === entityId && rel.relationType === relationType
+      rel => rel.entityId === entityId &&
+             rel.relationType.toLowerCase() === relationType.toLowerCase()
     );
   };
 

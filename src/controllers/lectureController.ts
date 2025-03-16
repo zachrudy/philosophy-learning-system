@@ -328,6 +328,7 @@ export class LectureController {
 
       // Extract entity relationships and prerequisites for separate handling
       const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
+      console.log('Entity Relations received:', JSON.stringify(entityRelations));
 
       // Use transaction to ensure atomicity
       const result = await prisma.$transaction(async (tx: PrismaClient) => {
@@ -836,19 +837,37 @@ export class LectureController {
               throw new NotFoundError(`Entity with ID ${relation.entityId} not found`);
             }
 
-            // Validate relation type
-            if (!Object.values(LECTURE_ENTITY_RELATION_TYPES).includes(relation.relationType)) {
-              throw new ValidationError(`Invalid relation type: ${relation.relationType}`, {
-                relationType: `"${relation.relationType}" is not a valid relation type`
-              });
+            // Clean and normalize relation type
+            const relationType = relation.relationType.toLowerCase().trim();
+
+            // Convert to array of valid types for easier comparison
+            const validTypes = Object.values(LECTURE_ENTITY_RELATION_TYPES).map(type =>
+              typeof type === 'string' ? type.toLowerCase() : type
+            );
+
+            // Validate relation type with case-insensitive check
+            if (!validTypes.includes(relationType)) {
+              throw new ValidationError(
+                `Invalid relation type: ${relation.relationType}`,
+                { relationType: `"${relation.relationType}" is not a valid relation type` }
+              );
             }
 
-            // Create the relation
+            // Find the canonical form (correct casing) from constants
+            let canonicalType = relationType;
+            for (const [key, value] of Object.entries(LECTURE_ENTITY_RELATION_TYPES)) {
+              if (typeof value === 'string' && value.toLowerCase() === relationType) {
+                canonicalType = value;
+                break;
+              }
+            }
+
+            // Create the relation with the canonical relation type
             const created = await tx.lectureEntityRelation.create({
               data: {
                 lectureId,
                 entityId: relation.entityId,
-                relationType: relation.relationType
+                relationType: canonicalType
               },
               include: {
                 entity: true

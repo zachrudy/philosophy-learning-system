@@ -196,7 +196,7 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
       const dataToSubmit = {
         ...formData,
         prerequisiteIds: prerequisites.length > 0 ? prerequisites : undefined,
-        entityRelationships: entityRelationships.length > 0 ? entityRelationships : undefined
+        entityRelations: entityRelationships.length > 0 ? entityRelationships : undefined // renamed from entityRelationships
       };
 
       // Prepare the API request

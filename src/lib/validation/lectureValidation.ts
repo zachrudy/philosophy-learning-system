@@ -185,7 +185,10 @@ export function validateLecture(data: Partial<CreateLectureDTO>, isUpdate = fals
 
   // Validate entity relations if provided
   if (data.entityRelations !== undefined) {
-    const validRelationTypes = Object.keys(LECTURE_ENTITY_RELATION_TYPES);
+    // Get valid relation types in lowercase for case-insensitive comparison
+    const validRelationTypes = Object.values(LECTURE_ENTITY_RELATION_TYPES).map(type =>
+      typeof type === 'string' ? type.toLowerCase() : type
+    );
 
     for (let i = 0; i < data.entityRelations.length; i++) {
       const relation = data.entityRelations[i];
@@ -196,8 +199,12 @@ export function validateLecture(data: Partial<CreateLectureDTO>, isUpdate = fals
 
       if (!relation.relationType) {
         errors.push(`Relation type is required for relation at index ${i}`);
-      } else if (!validRelationTypes.includes(relation.relationType)) {
-        errors.push(`Invalid relation type '${relation.relationType}' for relation at index ${i}`);
+      } else {
+        // Case-insensitive comparison
+        const normalizedType = relation.relationType.toLowerCase();
+        if (!validRelationTypes.includes(normalizedType)) {
+          errors.push(`Invalid relation type '${relation.relationType}' for relation at index ${i}`);
+        }
       }
     }
   }

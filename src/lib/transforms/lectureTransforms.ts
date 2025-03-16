@@ -13,6 +13,8 @@ import { transformArray } from './baseTransforms';
 // Forward declaration to handle circular dependencies
 import { transformPhilosophicalEntity } from './entityTransforms';
 
+import { transformReflection } from './reflectionTransforms';
+
 /**
  * Transform a Lecture from database model to API response
  */
@@ -132,24 +134,6 @@ export function transformProgress(
     // For example, formatting dates
     lastViewed: progress.lastViewed,
     completedAt: progress.completedAt
-  };
-}
-
-/**
- * Transform Reflection data from database model to API response
- */
-export function transformReflection(
-  reflection: Reflection | null
-): (Reflection & {
-  parsedEvaluation: AIEvaluationData | null
-}) | null {
-  if (!reflection) return null;
-
-  // Create the transformed reflection with parsed evaluation
-  return {
-    ...reflection,
-    // Deserialize JSON fields like aiEvaluation if needed
-    parsedEvaluation: reflection.aiEvaluation ? deserializeJsonFromDb(reflection.aiEvaluation) : null
   };
 }
 
