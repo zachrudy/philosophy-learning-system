@@ -8,26 +8,56 @@ import { LectureEntityRelationDTO } from '@/types/models';
  */
 export class EntityRelationshipService {
   /**
-   * Fetches entity relationships for a lecture
-   */
-  static async getRelationshipsForLecture(lectureId: string): Promise<LectureEntityRelationDTO[]> {
-    try {
-      const response = await fetch(`/api/lectures/${lectureId}/entity-relations`);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch entity relationships');
+     * Fetches entity relationships for a lecture
+     * Includes a cache mechanism to prevent redundant API calls
+     */
+    static async getRelationshipsForLecture(lectureId: string): Promise<LectureEntityRelationDTO[]> {
+      // Use a static cache to prevent redundant API calls during the same session
+      if (!this._relationshipCache) {
+        this._relationshipCache = new Map<string, {
+          timestamp: number;
+          data: LectureEntityRelationDTO[];
+        }>();
       }
 
-      const data = await response.json();
-      return (data.data || []).map((relation: any) => ({
-        entityId: relation.entityId,
-        relationType: relation.relationType
-      }));
-    } catch (error) {
-      console.error('Error fetching entity relationships:', error);
-      return [];
+      // Check if we have cached data that's less than 30 seconds old
+      const cached = this._relationshipCache.get(lectureId);
+      if (cached && (Date.now() - cached.timestamp) < 30000) {
+        return cached.data;
+      }
+
+      try {
+        const response = await fetch(`/api/lectures/${lectureId}/entity-relations`);
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch entity relationships');
+        }
+
+        const data = await response.json();
+        const relationships = (data.data || []).map((relation: any) => ({
+          entityId: relation.entityId,
+          relationType: relation.relationType
+        }));
+
+        // Store in cache
+        this._relationshipCache.set(lectureId, {
+          timestamp: Date.now(),
+          data: relationships
+        });
+
+        return relationships;
+      } catch (error) {
+        console.error('Error fetching entity relationships:', error);
+        return [];
+      }
     }
-  }
+
+    // Static cache for relationship data
+    private static _relationshipCache: Map<string, {
+      timestamp: number;
+      data: LectureEntityRelationDTO[];
+    }>;
+
 
   /**
    * Updates entity relationships for a lecture

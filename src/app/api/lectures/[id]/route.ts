@@ -124,8 +124,13 @@ export async function PATCH(
       );
     }
 
+    // Clean up the body to remove any fields that could cause Prisma validation errors
+    const cleanBody = { ...body };
+    if ('entities' in cleanBody) delete cleanBody.entities;
+    if ('prerequisiteFor' in cleanBody) delete cleanBody.prerequisites;
+
     // Call the controller method to update the lecture
-    const result = await LectureController.updateLecture(id, body);
+    const result = await LectureController.updateLecture(id, cleanBody); 
 
     // Handle the result
     if (!result.success) {

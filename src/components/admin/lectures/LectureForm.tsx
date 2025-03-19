@@ -84,49 +84,66 @@ const LectureForm: React.FC<LectureFormProps> = ({ lectureId, initialData }) => 
   const isEditMode = !!lectureId;
 
   // Fetch lecture data if editing
-  useEffect(() => {
-    if (isEditMode && !initialData) {
-      const fetchLecture = async () => {
-        try {
-          setLoading(true);
-          setError(null);
+    useEffect(() => {
+      if (isEditMode && !initialData) {
+        const fetchLecture = async () => {
+          try {
+            setLoading(true);
+            setError(null);
 
-          const response = await fetch(`/api/lectures/${lectureId}?includePrerequisites=true`);
+            // Include entity relations in the fetch
+            const response = await fetch(`/api/lectures/${lectureId}?includePrerequisites=true&includeEntities=true&deep=true`);
 
-          if (!response.ok) {
-            throw new Error('Failed to fetch lecture');
+            if (!response.ok) {
+              throw new Error('Failed to fetch lecture');
+            }
+
+            const data = await response.json();
+
+            // Extract the basic lecture data without relationships
+            const {
+              prerequisites,
+              entityRelations,
+              entities,
+              prerequisiteFor,
+              ...basicLectureData
+            } = data;
+
+            setFormData(basicLectureData);
+
+            // Extract prerequisites if they exist
+            if (prerequisites) {
+              // Map to the format our component expects
+              const mappedPrerequisites = prerequisites.map((prereq: any) => ({
+                id: prereq.prerequisiteLectureId,
+                isRequired: prereq.isRequired,
+                importanceLevel: prereq.importanceLevel
+              }));
+              setPrerequisites(mappedPrerequisites);
+            }
+
+            // Extract lecture-entity relationships if they exist
+            if (entityRelations) {
+              // Map to the format our component expects
+              const mappedRelationships = entityRelations.map((relation: any) => ({
+                entityId: relation.entityId,
+                relationType: relation.relationType
+              }));
+              setEntityRelationships(mappedRelationships);
+            }
+
+          } catch (err) {
+            console.error('Error fetching lecture:', err);
+            setError(err instanceof Error ? err.message : 'An error occurred');
+          } finally {
+            setLoading(false);
           }
+        };
 
-          const data = await response.json();
-          setFormData(data);
-
-          // Extract prerequisites if they exist
-          if (data.prerequisites) {
-            // Map to the format our component expects
-            const mappedPrerequisites = data.prerequisites.map((prereq: any) => ({
-              id: prereq.prerequisiteLectureId,
-              isRequired: prereq.isRequired,
-              importanceLevel: prereq.importanceLevel
-            }));
-            setPrerequisites(mappedPrerequisites);
-          }
-          // Extract lecture-entity relationships if they exist
-          if (data.entityRelationships) {
-            setEntityRelationships(data.entityRelationships);
-          }
-
-        } catch (err) {
-          console.error('Error fetching lecture:', err);
-          setError(err instanceof Error ? err.message : 'An error occurred');
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchLecture();
-    }
-  }, [lectureId, initialData, isEditMode]);
-
+        fetchLecture();
+      }
+    }, [lectureId, initialData, isEditMode]);
+    
   // Handle form input changes
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>

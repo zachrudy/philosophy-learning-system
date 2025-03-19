@@ -112,12 +112,35 @@ export async function POST(
       );
     }
 
-    // Validate that we have an array of entity relations
+    // Validate that we have an array
     if (!Array.isArray(body)) {
       return NextResponse.json(
         { error: 'Request body must be an array of entity relations' },
         { status: 400 }
       );
+    }
+
+    console.log(`Received ${body.length} entity relations for lecture ${lectureId}`);
+
+    // Empty array is valid - it means remove all relationships
+    if (body.length === 0) {
+      try {
+        // Delete all entity relationships for this lecture
+        await prisma.lectureEntityRelation.deleteMany({
+          where: { lectureId }
+        });
+
+        return NextResponse.json({
+          message: 'All entity relationships removed successfully',
+          data: []
+        }, { status: 200 });
+      } catch (error) {
+        console.error('Error removing all entity relationships:', error);
+        return NextResponse.json(
+          { error: 'Failed to remove all entity relationships' },
+          { status: 500 }
+        );
+      }
     }
 
     // Validate each entity relation

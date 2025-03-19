@@ -47,72 +47,123 @@ const EntityRelationshipSelect: React.FC<EntityRelationshipSelectProps> = ({
   const relationTypes = EntityRelationshipService.getRelationTypes();
 
   // Load all philosophical entities
-  useEffect(() => {
-    const fetchEntities = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    useEffect(() => {
+      let isActive = true; // Flag to prevent state updates if component unmounts
 
-        const response = await fetch('/api/philosophical-entities?limit=100');
+      const fetchEntities = async () => {
+        try {
+          setLoading(true);
+          setError(null);
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch philosophical entities');
-        }
+          const response = await fetch('/api/philosophical-entities?limit=100');
 
-        const data = await response.json();
-        const fetchedEntities = data.data || [];
-        setEntities(fetchedEntities);
-
-        // Create a map for easy entity lookup
-        const entityMapping: Record<string, PhilosophicalEntity> = {};
-        fetchedEntities.forEach((entity: PhilosophicalEntity) => {
-          entityMapping[entity.id] = entity;
-        });
-        setEntityMap(entityMapping);
-
-        // Initialize expanded state for each entity type
-        const typesMap: Record<string, boolean> = {};
-        fetchedEntities.forEach((entity: PhilosophicalEntity) => {
-          if (!typesMap[entity.type]) {
-            typesMap[entity.type] = true; // Start with all types expanded
+          if (!response.ok) {
+            throw new Error('Failed to fetch philosophical entities');
           }
-        });
-        setExpandedTypes(typesMap);
-      } catch (err) {
-        console.error('Error fetching entities:', err);
-        setError(err instanceof Error ? err.message : 'An error occurred');
-      } finally {
-        setLoading(false);
-      }
-    };
 
-    // If we have a lectureId, also fetch existing relationships
-    const fetchRelationships = async () => {
-      if (!lectureId) return;
+          const data = await response.json();
+          const fetchedEntities = data.data || [];
 
-      try {
-        const existingRelationships = await EntityRelationshipService.getRelationshipsForLecture(lectureId);
-        setRelationships(existingRelationships);
+          // Only update state if component is still mounted
+          if (isActive) {
+            setEntities(fetchedEntities);
+
+            // Create a map for easy entity lookup
+            const entityMapping: Record<string, PhilosophicalEntity> = {};
+            fetchedEntities.forEach((entity: PhilosophicalEntity) => {
+              entityMapping[entity.id] = entity;
+            });
+            setEntityMap(entityMapping);
+
+            // Initialize expanded state for each entity type
+            const typesMap: Record<string, boolean> = {};
+            fetchedEntities.forEach((entity: PhilosophicalEntity) => {
+              if (!typesMap[entity.type]) {
+                typesMap[entity.type] = true; // Start with all types expanded
+              }
+            });
+            setExpandedTypes(typesMap);
+          }
+        } catch (err) {
+          console.error('Error fetching entities:', err);
+          if (isActive) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
+          }
+        } finally {
+          if (isActive) {
+            setLoading(false);
+          }
+        }
+      };
+
+      fetchEntities();
+
+      // Cleanup function
+      return () => {
+        isActive = false;
+      };
+    }, []); // Remove dependencies to prevent re-fetching
+
+    // Handle initial relationships and fetch if needed
+    useEffect(() => {
+      // If initialRelationships is provided, use it directly
+      if (initialRelationships && initialRelationships.length > 0) {
+        // Validate the initialRelationships to ensure they have required fields
+        const validRelationships = initialRelationships.filter(rel =>
+          rel && rel.entityId && rel.relationType &&
+          typeof rel.entityId === 'string' &&
+          typeof rel.relationType === 'string'
+        );
+
+        setRelationships(validRelationships);
 
         // Open relation panels for entities that already have relationships
-        const entityIds = new Set(existingRelationships.map(rel => rel.entityId));
+        const entityIds = new Set(validRelationships.map(rel => rel.entityId));
         const panelState: Record<string, boolean> = {};
         entityIds.forEach(id => {
           panelState[id] = true;
         });
         setOpenRelationPanels(panelState);
 
-        // Call onChange to sync with parent component
-        onChange(existingRelationships);
-      } catch (err) {
-        console.error('Error fetching relationships:', err);
-        // Don't set error state to avoid blocking entity loading
+        // No need to fetch or call onChange since we're using initialRelationships
+        return;
       }
-    };
 
-    fetchEntities();
-    fetchRelationships();
-  }, [lectureId, onChange]);
+      // Only fetch from API if we have lectureId AND no initialRelationships were provided
+      if (lectureId && initialRelationships.length === 0) {
+        let isActive = true;
+
+        const fetchRelationships = async () => {
+          try {
+            const existingRelationships = await EntityRelationshipService.getRelationshipsForLecture(lectureId);
+
+            if (isActive) {
+              setRelationships(existingRelationships);
+
+              // Open relation panels for entities that already have relationships
+              const entityIds = new Set(existingRelationships.map(rel => rel.entityId));
+              const panelState: Record<string, boolean> = {};
+              entityIds.forEach(id => {
+                panelState[id] = true;
+              });
+              setOpenRelationPanels(panelState);
+
+              // Call onChange to sync with parent component
+              onChange(existingRelationships);
+            }
+          } catch (err) {
+            console.error('Error fetching relationships:', err);
+            // Don't set error state to avoid blocking entity loading
+          }
+        };
+
+        fetchRelationships();
+
+        return () => {
+          isActive = false;
+        };
+      }
+    }, [lectureId, initialRelationships, onChange]);
 
   // Group entities by type
   const getEntitiesByType = () => {

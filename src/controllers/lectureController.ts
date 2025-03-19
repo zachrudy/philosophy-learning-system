@@ -327,8 +327,7 @@ export class LectureController {
       };
 
       // Extract entity relationships and prerequisites for separate handling
-      const { entityIds, entityRelations, prerequisiteIds, ...lectureData } = data;
-      console.log('Entity Relations received:', JSON.stringify(entityRelations));
+      const { entityIds, entityRelations, prerequisiteIds, prerequisites, prerequisiteFor, entities, ...lectureData } = data;
 
       // Use transaction to ensure atomicity
       const result = await prisma.$transaction(async (tx: PrismaClient) => {
