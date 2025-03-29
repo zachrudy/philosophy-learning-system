@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getLectureReflections } from '@/lib/services/reflectionService';
-import { formatDate } from '@/lib/utils';
+import AIEvaluationResult from './AIEvaluationResult';
 
 interface Reflection {
   id: string;
@@ -28,18 +28,31 @@ interface Reflection {
 interface ReflectionHistoryProps {
   lectureId: string;
   userId: string;
+  promptType?: string;
+  sortOrder?: 'newest' | 'oldest';
+  showAIFeedback?: boolean;
   className?: string;
 }
 
 const ReflectionHistory: React.FC<ReflectionHistoryProps> = ({
   lectureId,
   userId,
+  promptType,
+  sortOrder = 'newest',
+  showAIFeedback = true,
   className = ''
 }) => {
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<string>(promptType || 'all');
+
+  useEffect(() => {
+    // Update active tab when promptType prop changes
+    if (promptType) {
+      setActiveTab(promptType);
+    }
+  }, [promptType]);
 
   useEffect(() => {
     const fetchReflections = async () => {
@@ -81,6 +94,18 @@ const ReflectionHistory: React.FC<ReflectionHistoryProps> = ({
     }
   };
 
+  // Format date nicely
+  const formatDate = (dateString: string): string => {
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    };
+    return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+
   // Filter reflections based on active tab
   const filteredReflections = activeTab === 'all'
     ? reflections
@@ -92,9 +117,13 @@ const ReflectionHistory: React.FC<ReflectionHistoryProps> = ({
     return acc;
   }, {});
 
-  // Sort reflections by date (newest first)
+  // Sort reflections by date
   const sortedReflections = [...filteredReflections].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    (a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+    }
   );
 
   if (loading) {
@@ -135,45 +164,42 @@ const ReflectionHistory: React.FC<ReflectionHistoryProps> = ({
     );
   }
 
+  // Don't show tabs if promptType is provided externally
+  const showTabs = !promptType;
+
   return (
     <div className={`bg-white rounded-lg shadow overflow-hidden ${className}`}>
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h2 className="text-lg font-medium text-gray-900">Reflection History</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Review your previous reflections for this lecture.
-        </p>
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <div className="px-6 flex overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`py-3 px-4 text-sm font-medium border-b-2 ${
-              activeTab === 'all'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            All Reflections ({reflections.length})
-          </button>
-
-          {Object.entries(reflectionsByType).map(([type, count]) => (
+      {/* Tabs - only show if not externally filtered */}
+      {showTabs && (
+        <div className="border-b border-gray-200">
+          <div className="px-6 flex overflow-x-auto">
             <button
-              key={type}
-              onClick={() => setActiveTab(type)}
+              onClick={() => setActiveTab('all')}
               className={`py-3 px-4 text-sm font-medium border-b-2 ${
-                activeTab === type
+                activeTab === 'all'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              {getPromptTypeDisplay(type)} ({count})
+              All Reflections ({reflections.length})
             </button>
-          ))}
+
+            {Object.entries(reflectionsByType).map(([type, count]) => (
+              <button
+                key={type}
+                onClick={() => setActiveTab(type)}
+                className={`py-3 px-4 text-sm font-medium border-b-2 ${
+                  activeTab === type
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {getPromptTypeDisplay(type)} ({count})
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Reflections List */}
       <div className="px-6 py-4">
@@ -182,7 +208,7 @@ const ReflectionHistory: React.FC<ReflectionHistoryProps> = ({
         ) : (
           <ul className="divide-y divide-gray-200">
             {sortedReflections.map((reflection) => (
-              <li key={reflection.id} className="py-4">
+              <li key={reflection.id} className="py-6">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
@@ -206,36 +232,19 @@ const ReflectionHistory: React.FC<ReflectionHistoryProps> = ({
                   )}
                 </div>
 
-                <div className="text-sm text-gray-900 whitespace-pre-wrap">
-                  {reflection.content}
+                <div className="prose prose-sm max-w-none">
+                  <div className="bg-gray-50 p-4 rounded-md border border-gray-200 whitespace-pre-wrap">
+                    {reflection.content}
+                  </div>
                 </div>
 
-                {reflection.parsedEvaluation && (
-                  <div className="mt-3 bg-gray-50 p-3 rounded text-sm">
-                    <h4 className="font-medium text-gray-900">Feedback</h4>
-                    <p className="text-gray-700 mt-1">{reflection.parsedEvaluation.feedback}</p>
-
-                    {reflection.parsedEvaluation.areas?.strength?.length > 0 && (
-                      <div className="mt-2">
-                        <h5 className="text-xs font-medium text-gray-900">Strengths</h5>
-                        <ul className="list-disc list-inside text-xs text-gray-700 ml-1">
-                          {reflection.parsedEvaluation.areas.strength.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {reflection.parsedEvaluation.areas?.improvement?.length > 0 && (
-                      <div className="mt-2">
-                        <h5 className="text-xs font-medium text-gray-900">Areas for Improvement</h5>
-                        <ul className="list-disc list-inside text-xs text-gray-700 ml-1">
-                          {reflection.parsedEvaluation.areas.improvement.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                {showAIFeedback && reflection.parsedEvaluation && (
+                  <div className="mt-4">
+                    <AIEvaluationResult
+                      evaluation={reflection.parsedEvaluation}
+                      mastered={reflection.score ? reflection.score >= 70 : false}
+                      compact={true}
+                    />
                   </div>
                 )}
               </li>
