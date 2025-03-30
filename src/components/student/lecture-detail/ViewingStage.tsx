@@ -3,7 +3,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { markLectureViewed } from '@/lib/services/lectureService';
 import { updateProgressStatus } from '@/lib/services/progressService';
 import { PROGRESS_STATUS } from '@/lib/constants';
 
@@ -44,13 +43,6 @@ const ViewingStage: React.FC<ViewingStageProps> = ({
       setIsMarking(true);
       setError(null);
 
-      // Call the API to mark the lecture as viewed
-      const result = await markLectureViewed(userId, lecture.id);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to mark lecture as viewed');
-      }
-
       // Update progress status
       const progressResult = await updateProgressStatus(userId, lecture.id, PROGRESS_STATUS.WATCHED);
 
@@ -89,7 +81,7 @@ const ViewingStage: React.FC<ViewingStageProps> = ({
           <div className="bg-gray-100 p-4 rounded-lg">
             <p className="text-gray-800">
               This lecture content is available at:{' '}
-
+              <a
                 href={lecture.contentUrl}
                 target="_blank"
                 rel="noopener noreferrer"
