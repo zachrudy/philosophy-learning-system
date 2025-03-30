@@ -8,9 +8,9 @@ import PrerequisiteCheck from './PrerequisiteCheck';
 import LectureContent from './LectureContent';
 import ReflectionForm from '../reflection/ReflectionForm';
 import ReflectionPrompt from '../reflection/ReflectionPrompt';
-import WorkflowActions from './WorkflowActions';
+import WorkflowActions from '../workflow/WorkflowActions';
 import { updateProgressStatus } from '@/lib/services/progressService';
-import { submitReflection } from '@/lib/services/reflectionService';
+import { reflectionService } from '@/lib/services/reflectionService';
 
 interface WorkflowStageManagerProps {
   lecture: any;
@@ -59,7 +59,7 @@ export default function WorkflowStageManager({
       setError(null);
 
       // Submit the reflection
-      const reflectionResult = await submitReflection(lecture.id, promptType, content);
+      const reflectionResult = await reflectionService.submitReflection(lecture.id, promptType, content);
 
       if (!reflectionResult.success) {
         throw new Error(reflectionResult.error || 'Failed to submit reflection');

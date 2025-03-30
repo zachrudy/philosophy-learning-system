@@ -1,6 +1,6 @@
 // src/components/student/reflection/ReflectionForm.tsx
 import React, { useState, useEffect } from 'react';
-import { reflectionService } from '@/services/reflectionService';
+import { reflectionService } from '@/lib/services/reflectionService';
 import WordCounter from './WordCounter';
 
 interface ReflectionFormProps {

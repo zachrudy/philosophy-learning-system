@@ -49,6 +49,14 @@ export async function GET(
       );
     }
 
+    // Add this check for when result.success is true but data is missing
+    if (!result.data) {
+      return NextResponse.json(
+        { error: 'Lecture not found' },
+        { status: 404 }
+      );
+    }
+
     // Return successful response
     return NextResponse.json(result.data);
   } catch (error) {
@@ -130,7 +138,7 @@ export async function PATCH(
     if ('prerequisiteFor' in cleanBody) delete cleanBody.prerequisites;
 
     // Call the controller method to update the lecture
-    const result = await LectureController.updateLecture(id, cleanBody); 
+    const result = await LectureController.updateLecture(id, cleanBody);
 
     // Handle the result
     if (!result.success) {

@@ -1,4 +1,7 @@
 // src/components/student/DashboardContainer.tsx
+
+'use client'
+
 import React, { useEffect, useState } from 'react';
 import LectureCard from './LectureCard';
 import EmptyState from './EmptyState';

@@ -1,6 +1,6 @@
 // src/components/student/workflow/WorkflowActions.tsx
 import React, { useState } from 'react';
-import { progressService } from '@/services/progressService';
+import { updateProgressStatus } from '@/lib/services/progressService';
 import { PROGRESS_STATUS } from '@/lib/constants';
 
 interface WorkflowActionsProps {
@@ -29,7 +29,7 @@ const WorkflowActions: React.FC<WorkflowActionsProps> = ({
     setError(null);
 
     try {
-      await progressService.updateProgressStatus(lectureId, newStatus);
+      await updateProgressStatus(userId, lectureId, newStatus);
       if (onStatusUpdate) {
         onStatusUpdate(newStatus);
       }
