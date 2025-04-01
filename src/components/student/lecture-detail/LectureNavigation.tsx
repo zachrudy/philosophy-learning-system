@@ -1,5 +1,4 @@
 // src/components/student/lecture-detail/LectureNavigation.tsx
-
 'use client';
 
 import React, { useState, useEffect } from 'react';

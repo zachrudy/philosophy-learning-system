@@ -162,3 +162,29 @@ export async function getLectureWorkflowState(userId: string, lectureId: string)
     };
   }
 }
+
+export async function fetchAdjacentLectures(lectureId: string, userId: string) {
+  try {
+    const response = await fetch(`/api/lectures/${lectureId}/adjacent?userId=${userId}`);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Failed to fetch adjacent lectures: ${response.status}`,
+      };
+    }
+
+    const data = await response.json();
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error('Error fetching adjacent lectures:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'An error occurred',
+    };
+  }
+}
