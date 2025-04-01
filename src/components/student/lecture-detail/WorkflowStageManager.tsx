@@ -2,131 +2,100 @@
 
 'use client';
 
-import React, { useState } from 'react';
-import WorkflowIndicator from './WorkflowIndicator';
+import React, { useState, useEffect } from 'react';
+import { PROGRESS_STATUS } from '@/lib/constants';
 import PrerequisiteCheck from './PrerequisiteCheck';
-import LectureContent from './LectureContent';
-import ReflectionForm from '../reflection/ReflectionForm';
-import ReflectionPrompt from '../reflection/ReflectionPrompt';
-import WorkflowActions from '../workflow/WorkflowActions';
-import { updateProgressStatus } from '@/lib/services/progressService';
-import { reflectionService } from '@/lib/services/reflectionService';
+import ViewingStage from './ViewingStage';
+import PreLectureStage from './PreLectureStage';
+import InitialReflectionStage from './InitialReflectionStage';
+import MasteryTestingStage from './MasteryTestingStage';
+import MasteredStage from './MasteredStage';
+import { checkPrerequisitesSatisfied } from '@/lib/services/lectureService';
+import LoadingState from '../LoadingState';
 
 interface WorkflowStageManagerProps {
-  lecture: any;
-  progress: any;
-  prerequisiteStatus: any;
+  lecture: {
+    id: string;
+    title: string;
+    description: string;
+    contentUrl: string;
+    contentType: string;
+    embedAllowed: boolean;
+    sourceAttribution: string;
+    lecturerName: string;
+    preLecturePrompt: string;
+    initialPrompt: string;
+    masteryPrompt: string;
+    evaluationPrompt: string;
+    discussionPrompts: string;
+    category: string;
+    order: number;
+  };
+  progress: {
+    id?: string;
+    userId: string;
+    lectureId: string;
+    status: string;
+    lastViewed?: string;
+    completedAt?: string;
+  };
   userId: string;
+  prerequisiteStatus?: any;
   onProgressUpdate: (updatedProgress: any) => void;
 }
 
 export default function WorkflowStageManager({
   lecture,
   progress,
-  prerequisiteStatus,
   userId,
+  prerequisiteStatus: initialPrerequisiteStatus,
   onProgressUpdate
 }: WorkflowStageManagerProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(!initialPrerequisiteStatus);
+  const [prerequisiteStatus, setPrerequisiteStatus] = useState(initialPrerequisiteStatus || { satisfied: false });
   const [error, setError] = useState<string | null>(null);
+  const [nextLecture, setNextLecture] = useState<any>(null);
+
+  // Fetch prerequisite status if not provided
+  useEffect(() => {
+    if (!initialPrerequisiteStatus) {
+      const fetchPrerequisiteStatus = async () => {
+        try {
+          setIsLoading(true);
+          const result = await checkPrerequisitesSatisfied(userId, lecture.id);
+
+          if (result.success) {
+            setPrerequisiteStatus(result.data);
+          } else {
+            console.error('Error checking prerequisites:', result.error);
+            // Default to satisfied if we can't check prerequisites
+            setPrerequisiteStatus({ satisfied: true });
+          }
+        } catch (err) {
+          console.error('Error checking prerequisites:', err);
+          setPrerequisiteStatus({ satisfied: true });
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      fetchPrerequisiteStatus();
+    }
+  }, [initialPrerequisiteStatus, userId, lecture.id]);
 
   // Handle workflow stage transitions
-  const handleStageTransition = async (newStatus: string) => {
-    try {
-      setIsSubmitting(true);
-      setError(null);
-
-      const result = await updateProgressStatus(userId, lecture.id, newStatus);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update progress');
-      }
-
-      // Update the progress in the parent component
-      onProgressUpdate(result.data);
-    } catch (err) {
-      console.error('Error transitioning workflow stage:', err);
-      setError('Failed to update progress. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleProgressUpdate = (updatedProgress: any) => {
+    onProgressUpdate(updatedProgress);
   };
 
-  // Handle reflection submission
-  const handleReflectionSubmit = async (promptType: string, content: string) => {
-    try {
-      setIsSubmitting(true);
-      setError(null);
+  if (isLoading) {
+    return <LoadingState />;
+  }
 
-      // Submit the reflection
-      const reflectionResult = await reflectionService.submitReflection(lecture.id, promptType, content);
-
-      if (!reflectionResult.success) {
-        throw new Error(reflectionResult.error || 'Failed to submit reflection');
-      }
-
-      // Determine the next status based on the prompt type
-      let nextStatus;
-      switch (promptType) {
-        case 'pre-lecture':
-          nextStatus = 'STARTED';
-          break;
-        case 'initial':
-          nextStatus = 'INITIAL_REFLECTION';
-          break;
-        case 'mastery':
-          nextStatus = 'MASTERY_TESTING';
-          break;
-        default:
-          nextStatus = progress.status;
-      }
-
-      // Update the progress status
-      const progressResult = await updateProgressStatus(userId, lecture.id, nextStatus);
-
-      if (!progressResult.success) {
-        throw new Error(progressResult.error || 'Failed to update progress');
-      }
-
-      // Update the progress in the parent component
-      onProgressUpdate(progressResult.data);
-    } catch (err) {
-      console.error('Error submitting reflection:', err);
-      setError('Failed to submit reflection. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Handle AI evaluation submission (for MVP, manual input)
-  const handleAIEvaluationSubmit = async (score: number) => {
-    try {
-      setIsSubmitting(true);
-      setError(null);
-
-      // For MVP, we'll just update the progress status based on the score
-      const nextStatus = score >= 70 ? 'MASTERED' : 'INITIAL_REFLECTION';
-
-      const result = await updateProgressStatus(userId, lecture.id, nextStatus);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update progress');
-      }
-
-      // Update the progress in the parent component
-      onProgressUpdate(result.data);
-    } catch (err) {
-      console.error('Error submitting evaluation:', err);
-      setError('Failed to update progress. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Determine what to render based on progress status
+  // Determine which component to render based on current progress status
   const renderWorkflowStage = () => {
     // Check if prerequisites are satisfied
-    if (!prerequisiteStatus.satisfied) {
+    if (!prerequisiteStatus.satisfied && progress.status === PROGRESS_STATUS.LOCKED) {
       return (
         <PrerequisiteCheck
           prerequisites={prerequisiteStatus}
@@ -137,165 +106,91 @@ export default function WorkflowStageManager({
 
     // Render based on current progress status
     switch (progress.status) {
-      case 'LOCKED':
+      case PROGRESS_STATUS.LOCKED:
+        // If we get here, prerequisites are satisfied but status is still LOCKED
+        // Update to READY automatically
+        setTimeout(() => {
+          handleProgressUpdate({
+            ...progress,
+            status: PROGRESS_STATUS.READY
+          });
+        }, 0);
+        return <LoadingState count={1} />;
+
+      case PROGRESS_STATUS.READY:
         return (
-          <PrerequisiteCheck
-            prerequisites={prerequisiteStatus}
+          <PreLectureStage
             lecture={lecture}
+            userId={userId}
+            onProgressUpdate={handleProgressUpdate}
           />
         );
 
-      case 'READY':
+      case PROGRESS_STATUS.STARTED:
         return (
-          <div className="p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Pre-Lecture Reflection</h2>
-            <ReflectionPrompt
-              promptText={lecture.preLecturePrompt}
-              promptType="pre-lecture"
-            />
-            <ReflectionForm
-              onSubmit={(content) => handleReflectionSubmit('pre-lecture', content)}
-              minWords={30}
-              isSubmitting={isSubmitting}
-            />
-          </div>
+          <ViewingStage
+            lecture={lecture}
+            onProgressUpdate={handleProgressUpdate}
+          />
         );
 
-      case 'STARTED':
+      case PROGRESS_STATUS.WATCHED:
         return (
-          <div className="p-6">
-            <LectureContent
-              lecture={lecture}
-              onComplete={() => handleStageTransition('WATCHED')}
-            />
-          </div>
+          <InitialReflectionStage
+            lecture={lecture}
+            userId={userId}
+            onProgressUpdate={handleProgressUpdate}
+          />
         );
 
-      case 'WATCHED':
+      case PROGRESS_STATUS.INITIAL_REFLECTION:
         return (
-          <div className="p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Initial Reflection</h2>
-            <ReflectionPrompt
-              promptText={lecture.initialPrompt}
-              promptType="initial"
-            />
-            <ReflectionForm
-              onSubmit={(content) => handleReflectionSubmit('initial', content)}
-              minWords={30}
-              isSubmitting={isSubmitting}
-            />
-          </div>
+          <MasteryTestingStage
+            lecture={lecture}
+            userId={userId}
+            onProgressUpdate={handleProgressUpdate}
+          />
         );
 
-      case 'INITIAL_REFLECTION':
+      case PROGRESS_STATUS.MASTERY_TESTING:
         return (
-          <div className="p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Mastery Reflection</h2>
-            <ReflectionPrompt
-              promptText={lecture.masteryPrompt}
-              promptType="mastery"
-            />
-            <ReflectionForm
-              onSubmit={(content) => handleReflectionSubmit('mastery', content)}
-              minWords={50}
-              isSubmitting={isSubmitting}
-            />
-          </div>
+          <MasteryTestingStage
+            lecture={lecture}
+            userId={userId}
+            onProgressUpdate={handleProgressUpdate}
+          />
         );
 
-      case 'MASTERY_TESTING':
+      case PROGRESS_STATUS.MASTERED:
         return (
-          <div className="p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">AI Evaluation</h2>
-            <div className="bg-blue-50 p-4 rounded-md mb-4">
-              <p className="text-sm text-blue-700">{lecture.evaluationPrompt}</p>
-            </div>
-            <div className="mt-4">
-              <label htmlFor="evaluation-score" className="block text-sm font-medium text-gray-700 mb-1">
-                Enter Evaluation Score (0-100)
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="number"
-                  id="evaluation-score"
-                  min="0"
-                  max="100"
-                  className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-24 sm:text-sm border-gray-300 rounded-md"
-                  placeholder="Score"
-                />
-                <button
-                  onClick={() => {
-                    const scoreInput = document.getElementById('evaluation-score') as HTMLInputElement;
-                    const score = parseInt(scoreInput.value);
-                    if (score >= 0 && score <= 100) {
-                      handleAIEvaluationSubmit(score);
-                    }
-                  }}
-                  disabled={isSubmitting}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  {isSubmitting ? 'Submitting...' : 'Submit Score'}
-                </button>
-              </div>
-              <p className="mt-1 text-sm text-gray-500">
-                Score of 70 or higher will mark this lecture as mastered.
-              </p>
-            </div>
-          </div>
-        );
-
-      case 'MASTERED':
-        return (
-          <div className="p-6">
-            <div className="bg-green-50 p-4 rounded-md mb-6">
-              <h2 className="text-lg font-medium text-green-800">🎉 Lecture Mastered</h2>
-              <p className="mt-1 text-sm text-green-700">
-                You have successfully demonstrated mastery of this lecture.
-              </p>
-            </div>
-            <LectureContent
-              lecture={lecture}
-              readOnly={true}
-            />
-            <div className="mt-6">
-              <h3 className="text-md font-medium text-gray-900">Discussion Prompts</h3>
-              <div className="mt-2 bg-blue-50 p-4 rounded-md">
-                <p className="text-sm text-blue-700">{lecture.discussionPrompts}</p>
-              </div>
-            </div>
-          </div>
+          <MasteredStage
+            lecture={lecture}
+            userId={userId}
+            nextLecture={nextLecture}
+          />
         );
 
       default:
-        return (
-          <div className="p-6">
-            <div className="bg-yellow-50 p-4 rounded-md">
-              <p className="text-sm text-yellow-700">
-                Unknown progress status: {progress.status}. Please contact support.
-              </p>
-            </div>
-          </div>
-        );
+        // If we don't recognize the status, default to READY
+        setTimeout(() => {
+          handleProgressUpdate({
+            ...progress,
+            status: PROGRESS_STATUS.READY
+          });
+        }, 0);
+        return <LoadingState count={1} />;
     }
   };
 
   return (
     <div>
-      <WorkflowIndicator currentStatus={progress.status} />
-
       {error && (
-        <div className="mx-6 mt-4 bg-red-50 p-4 rounded-md">
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="mx-6 mt-4 p-4 bg-red-50 border-l-4 border-red-400 text-red-700">
+          <p>{error}</p>
         </div>
       )}
 
       {renderWorkflowStage()}
-
-      <WorkflowActions
-        status={progress.status}
-        isSubmitting={isSubmitting}
-        onAction={handleStageTransition}
-      />
     </div>
   );
 }
