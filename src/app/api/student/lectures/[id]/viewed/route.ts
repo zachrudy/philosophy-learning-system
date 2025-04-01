@@ -22,7 +22,28 @@ export async function POST(
       );
     }
 
-    const userId = session.user.id;
+    // Get user ID by looking up the user with their email
+    if (!session.user.email) {
+      return NextResponse.json(
+        { error: 'User email not found in session' },
+        { status: 400 }
+      );
+    }
+
+    // Look up the user by email to get their ID
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    const userId = user.id;
     const { id: lectureId } = params;
 
     console.log('Marking lecture as viewed:', { userId, lectureId });
