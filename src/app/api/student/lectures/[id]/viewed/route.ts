@@ -9,8 +9,11 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    console.log('POST /api/student/lectures/[id]/viewed called');
+
     // Check authentication
     const session = await getServerSession();
+    console.log('Session user:', session?.user);
 
     if (!session || !session.user) {
       return NextResponse.json(
@@ -21,6 +24,8 @@ export async function POST(
 
     const userId = session.user.id;
     const { id: lectureId } = params;
+
+    console.log('Marking lecture as viewed:', { userId, lectureId });
 
     if (!lectureId) {
       return NextResponse.json(
@@ -41,6 +46,8 @@ export async function POST(
       );
     }
 
+    console.log('Lecture found:', lecture.title);
+
     // Check if progress record exists
     let progress = await prisma.progress.findFirst({
       where: {
@@ -49,39 +56,32 @@ export async function POST(
       },
     });
 
+    console.log('Existing progress:', progress);
+
     if (!progress) {
-      // Create a new progress record if one doesn't exist
+      // Create a new progress record
+      console.log('Creating new progress record');
       progress = await prisma.progress.create({
         data: {
           userId,
           lectureId,
-          status: PROGRESS_STATUS.WATCHED, // Skip STARTED and go straight to WATCHED
+          status: PROGRESS_STATUS.WATCHED,
           lastViewed: new Date()
         },
       });
     } else {
-      // Only update if status is LOCKED, READY, or STARTED
-      // This prevents resetting progress for users who are further along
-      if (
-        [PROGRESS_STATUS.LOCKED, PROGRESS_STATUS.READY, PROGRESS_STATUS.STARTED].includes(progress.status as any)
-      ) {
-        progress = await prisma.progress.update({
-          where: { id: progress.id },
-          data: {
-            status: PROGRESS_STATUS.WATCHED,
-            lastViewed: new Date()
-          },
-        });
-      } else if (progress.status !== PROGRESS_STATUS.WATCHED) {
-        // If progress is beyond WATCHED, just update lastViewed
-        progress = await prisma.progress.update({
-          where: { id: progress.id },
-          data: {
-            lastViewed: new Date()
-          },
-        });
-      }
+      // Update existing progress
+      console.log('Updating existing progress to WATCHED');
+      progress = await prisma.progress.update({
+        where: { id: progress.id },
+        data: {
+          status: PROGRESS_STATUS.WATCHED,
+          lastViewed: new Date()
+        },
+      });
     }
+
+    console.log('Final progress state:', progress);
 
     return NextResponse.json({
       message: 'Lecture marked as viewed',
@@ -90,7 +90,7 @@ export async function POST(
   } catch (error) {
     console.error('Error in POST /api/student/lectures/[id]/viewed:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: String(error) },
       { status: 500 }
     );
   }

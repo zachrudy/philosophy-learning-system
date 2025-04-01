@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react'; // Add this import
 import Link from 'next/link';
 import { PROGRESS_STATUS } from '@/lib/constants';
 import LoadingState from '../LoadingState';
@@ -14,11 +15,13 @@ import { getUserProgressForLecture } from '@/lib/services/progressService';
 
 interface LectureDetailContainerProps {
   lectureId: string;
-  userId: string;
 }
 
 export default function LectureDetailContainer({ lectureId, userId }: LectureDetailContainerProps) {
+  console.log("LectureDetailContainer userId:", userId);
+
   const router = useRouter();
+  const { data: session, status: sessionStatus } = useSession(); // Get session data directly
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lecture, setLecture] = useState<any>(null);
@@ -27,6 +30,15 @@ export default function LectureDetailContainer({ lectureId, userId }: LectureDet
   useEffect(() => {
     async function fetchData() {
       try {
+        // If session is not loaded yet, wait
+        if (sessionStatus === 'loading') return;
+
+        // If no session, redirect to login
+        if (sessionStatus === 'unauthenticated') {
+          router.push('/auth/signin');
+          return;
+        }
+
         setIsLoading(true);
         setError(null);
 
@@ -40,18 +52,23 @@ export default function LectureDetailContainer({ lectureId, userId }: LectureDet
         const data = await response.json();
         setLecture(data);
 
-        // Get progress data (mock for now)
-        const progressResult = await getUserProgressForLecture(userId, lectureId);
+        // Get progress data if user is authenticated
+        if (session?.user?.id) {
+          const progressResult = await getUserProgressForLecture(session.user.id, lectureId);
 
-        if (progressResult.success) {
-          setProgress(progressResult.data);
+          if (progressResult.success) {
+            setProgress(progressResult.data);
+          } else {
+            // If we can't get progress, set a default value
+            setProgress({
+              status: PROGRESS_STATUS.READY,
+              userId: session.user.id,
+              lectureId
+            });
+          }
         } else {
-          // If we can't get progress, set a default value
-          setProgress({
-            status: PROGRESS_STATUS.READY,
-            userId,
-            lectureId
-          });
+          console.error("No user ID in session");
+          setError("Authentication issue. Please sign in again.");
         }
       } catch (err) {
         console.error('Error:', err);
@@ -64,7 +81,7 @@ export default function LectureDetailContainer({ lectureId, userId }: LectureDet
     if (lectureId) {
       fetchData();
     }
-  }, [lectureId, userId]);
+  }, [lectureId, session, sessionStatus, router]);
 
   const handleProgressUpdate = (updatedProgress: any) => {
     setProgress(updatedProgress);

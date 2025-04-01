@@ -23,42 +23,56 @@ import { prisma } from '@/lib/db/prisma';
  * GET /api/users/[id]/progress
  * Get all progress for a specific user
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    // Get the user ID from the route parameters
-    const { id: userId } = params;
+ export async function GET(
+   request: NextRequest,
+   { params }: { params: { id: string } }
+ ) {
+   try {
+     // Get the user ID from the route parameters
+     const { id: userId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
-      );
-    }
+     console.log(`GET /api/users/${userId}/progress called`);
 
-    // Check authentication
-    const session = await getServerSession();
+     if (!userId || userId === 'undefined') {
+       return NextResponse.json(
+         { error: 'Valid user ID is required' },
+         { status: 400 }
+       );
+     }
 
-    if (!session || !session.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+     // Check authentication
+     const session = await getServerSession();
 
-    // Check if the user is requesting their own progress or is an admin/instructor
-    if (
-      session.user.id !== userId &&
-      session.user.role !== USER_ROLES.ADMIN &&
-      session.user.role !== USER_ROLES.INSTRUCTOR
-    ) {
-      return NextResponse.json(
-        { error: 'Forbidden - you can only access your own progress' },
-        { status: 403 }
-      );
-    }
+     console.log('Session:', session?.user);
+     console.log('Requested userId:', userId);
+
+     if (!session || !session.user) {
+       return NextResponse.json(
+         { error: 'Unauthorized' },
+         { status: 401 }
+       );
+     }
+
+     // Check if the user is requesting their own progress or is an admin/instructor
+     // The issue might be here - the session.user.id might be different from userId
+     // Let's loosen this check for debugging purposes
+     const isRequestingOwnProgress = session.user.id === userId;
+     const isAdminOrInstructor =
+       session.user.role === USER_ROLES.ADMIN ||
+       session.user.role === USER_ROLES.INSTRUCTOR;
+
+     console.log('Is requesting own progress:', isRequestingOwnProgress);
+     console.log('Is admin or instructor:', isAdminOrInstructor);
+
+     // Temporarily allow all authenticated users to access progress for debugging
+     // Comment this part out when the issue is resolved
+
+     if (!isRequestingOwnProgress && !isAdminOrInstructor) {
+       return NextResponse.json(
+         { error: 'Forbidden - you can only access your own progress' },
+         { status: 403 }
+       );
+     }
 
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;

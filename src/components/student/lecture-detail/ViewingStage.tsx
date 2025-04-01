@@ -3,6 +3,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useSession } from 'next-auth/react'; // Add this import
 import { updateProgressStatus } from '@/lib/services/progressService';
 import { PROGRESS_STATUS } from '@/lib/constants';
 
@@ -16,15 +17,14 @@ interface ViewingStageProps {
     sourceAttribution: string;
     lecturerName: string;
   };
-  userId: string;
   onProgressUpdate: (newStatus: string) => void;
 }
 
 const ViewingStage: React.FC<ViewingStageProps> = ({
   lecture,
-  userId,
   onProgressUpdate
 }) => {
+  const { data: session } = useSession(); // Get session data directly
   const [isMarking, setIsMarking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,12 +43,23 @@ const ViewingStage: React.FC<ViewingStageProps> = ({
       setIsMarking(true);
       setError(null);
 
-      // Update progress status
-      const progressResult = await updateProgressStatus(userId, lecture.id, PROGRESS_STATUS.WATCHED);
+      console.log('Marking lecture as viewed:', lecture.id);
 
-      if (!progressResult.success) {
-        throw new Error(progressResult.error || 'Failed to update progress');
+      // Use the direct endpoint to mark as viewed
+      const response = await fetch(`/api/student/lectures/${lecture.id}/viewed`, {
+        method: 'POST',
+      });
+
+      console.log('Mark as viewed response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error marking lecture as viewed:', errorText);
+        throw new Error('Failed to mark lecture as viewed');
       }
+
+      const result = await response.json();
+      console.log('Mark as viewed result:', result);
 
       // Notify parent component of the status change
       onProgressUpdate(PROGRESS_STATUS.WATCHED);
