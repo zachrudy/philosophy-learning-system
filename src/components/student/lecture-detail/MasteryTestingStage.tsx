@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import ReflectionPrompt from '../reflection/ReflectionPrompt';
 import ReflectionForm from '../reflection/ReflectionForm';
-import { submitReflection } from '@/lib/services/reflectionService';
+import { reflectionService } from '@/lib/services/reflectionService';
 import { updateProgressStatus } from '@/lib/services/progressService';
 import { PROGRESS_STATUS } from '@/lib/constants';
 
@@ -37,7 +37,11 @@ const MasteryTestingStage: React.FC<MasteryTestingStageProps> = ({
       setError(null);
 
       // Submit the reflection
-      const reflectionResult = await submitReflection(lecture.id, 'mastery', content);
+      const reflectionResult = await reflectionService.submitReflection(
+        lecture.id,
+        'mastery',
+        content
+      );
 
       if (!reflectionResult.success) {
         throw new Error(reflectionResult.error || 'Failed to submit reflection');

@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import ReflectionPrompt from '../reflection/ReflectionPrompt';
 import ReflectionForm from '../reflection/ReflectionForm';
-import { submitReflection } from '@/lib/services/reflectionService';
+import { reflectionService } from '@/lib/services/reflectionService';
 import { updateProgressStatus } from '@/lib/services/progressService';
 import { PROGRESS_STATUS } from '@/lib/constants';
 
@@ -33,8 +33,12 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
       setIsSubmitting(true);
       setError(null);
 
-      // Submit the reflection
-      const reflectionResult = await submitReflection(lecture.id, 'pre-lecture', content);
+      // Submit the reflection using the updated service method
+      const reflectionResult = await reflectionService.submitReflection(
+        lecture.id,
+        'pre-lecture',
+        content
+      );
 
       if (!reflectionResult.success) {
         throw new Error(reflectionResult.error || 'Failed to submit reflection');
@@ -103,7 +107,7 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
         lectureId={lecture.id}
         promptType="pre-lecture"
         minimumWords={30}
-        onSubmitSuccess={() => handleReflectionSubmit}
+        onSubmitSuccess={(content) => handleReflectionSubmit(content)}
         className="mt-4"
       />
 

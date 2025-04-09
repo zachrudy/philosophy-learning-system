@@ -6,7 +6,7 @@ import WordCounter from './WordCounter';
 interface ReflectionFormProps {
   lectureId: string;
   promptType: 'pre-lecture' | 'initial' | 'mastery' | 'discussion';
-  onSubmitSuccess?: () => void;
+  onSubmitSuccess?: (content: string) => void;
   minimumWords?: number;
   initialContent?: string;
   className?: string;
@@ -45,25 +45,33 @@ const ReflectionForm: React.FC<ReflectionFormProps> = ({
     setError(null);
 
     try {
-      await reflectionService.submitReflection({
+      const result = await reflectionService.submitReflection(
         lectureId,
         promptType,
         content
-      });
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to submit reflection');
+      }
 
       setIsSubmitted(true);
+
+      // Call the onSubmitSuccess callback with the content
       if (onSubmitSuccess) {
-        onSubmitSuccess();
+        onSubmitSuccess(content);
       }
     } catch (err) {
-      setError('Failed to submit your reflection. Please try again.');
       console.error('Error submitting reflection:', err);
+      setError('Failed to submit your reflection. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isSubmitted) {
+  if (isSubmitted && !onSubmitSuccess) {
+    // Only show this if there's no onSubmitSuccess handler
+    // If there is one, let the parent component handle the success state
     return (
       <div className={`bg-green-50 rounded-lg p-6 text-center ${className}`}>
         <div className="mb-4">

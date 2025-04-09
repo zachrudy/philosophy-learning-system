@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import ReflectionPrompt from '../reflection/ReflectionPrompt';
 import ReflectionForm from '../reflection/ReflectionForm';
-import { submitReflection } from '@/lib/services/reflectionService';
+import { reflectionService } from '@/lib/services/reflectionService';
 import { updateProgressStatus } from '@/lib/services/progressService';
 import { PROGRESS_STATUS } from '@/lib/constants';
 
@@ -33,8 +33,12 @@ const InitialReflectionStage: React.FC<InitialReflectionStageProps> = ({
       setIsSubmitting(true);
       setError(null);
 
-      // Submit the reflection
-      const reflectionResult = await submitReflection(lecture.id, 'initial', content);
+      // Submit the reflection using reflectionService
+      const reflectionResult = await reflectionService.submitReflection(
+        lecture.id,
+        'initial',
+        content
+      );
 
       if (!reflectionResult.success) {
         throw new Error(reflectionResult.error || 'Failed to submit reflection');

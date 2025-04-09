@@ -128,7 +128,7 @@ export default function PrerequisiteCheck({ prerequisites, lecture }: Prerequisi
       {/* Required Prerequisites */}
       <div className="mb-6">
         <h3 className="text-md font-medium text-gray-900 mb-2">
-          Required Prerequisites ({prerequisites.completedRequiredPrerequisites.length}/{prerequisites.requiredPrerequisites.length})
+          Required Prerequisites ({prerequisites.completedPrerequisites.filter(p => p.isRequired).length}/{prerequisites.requiredPrerequisites.length})
         </h3>
         {prerequisites.requiredPrerequisites.length > 0 ? (
           <ul className="divide-y divide-gray-200 border-t border-b border-gray-200">

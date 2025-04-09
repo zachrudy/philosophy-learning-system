@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getLectureReflections } from '@/lib/services/reflectionService';
+import { reflectionService } from '@/lib/services/reflectionService';
 import LectureContent from './LectureContent';
 import AIEvaluationResult from '../reflection/AIEvaluationResult';
 import ReflectionPrompt from '../reflection/ReflectionPrompt';
@@ -43,14 +43,15 @@ const MasteredStage: React.FC<MasteredStageProps> = ({
     const fetchMasteryReflection = async () => {
       try {
         setLoading(true);
-        const result = await getLectureReflections(lecture.id, userId, 'mastery');
+        // Use the reflectionService to get reflections
+        const result = await reflectionService.getLectureReflections(lecture.id, userId, 'mastery');
 
         if (!result.success) {
           throw new Error(result.error || 'Failed to fetch mastery reflection');
         }
 
         // Get the most recent mastery reflection with evaluation
-        const masteryReflections = result.data.filter(r =>
+        const masteryReflections = result.data.filter((r: any) =>
           r.promptType === 'mastery' &&
           r.status === 'EVALUATED' &&
           r.parsedEvaluation
@@ -58,7 +59,7 @@ const MasteredStage: React.FC<MasteredStageProps> = ({
 
         if (masteryReflections.length > 0) {
           // Sort by date if there are multiple
-          masteryReflections.sort((a, b) =>
+          masteryReflections.sort((a: any, b: any) =>
             new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
           );
           setMasteryReflection(masteryReflections[0]);

@@ -10,19 +10,55 @@ import { PROMPT_TYPES } from '@/lib/constants';
  */
 export async function POST(request: NextRequest) {
   try {
+    console.log("POST /api/reflections called");
+
     // Check authentication
     const session = await getServerSession();
+    console.log("Session:", JSON.stringify(session));
 
     if (!session || !session.user) {
+      console.log("No session or user found");
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
+    // Get user email from session
+    const userEmail = session.user.email;
+    console.log("User email from session:", userEmail);
+
+    if (!userEmail) {
+      console.log("No user email in session");
+      return NextResponse.json(
+        { error: 'User email not found in session' },
+        { status: 400 }
+      );
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email: userEmail },
+      select: { id: true }
+    });
+
+    console.log("User found:", user);
+
+    if (!user) {
+      console.log("No user found for email:", userEmail);
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    const userId = user.id;
+    console.log("User ID:", userId);
+
     // Parse request body
     const body = await request.json();
     const { lectureId, promptType, content } = body;
+    console.log("Request body:", { lectureId, promptType, content: content?.substring(0, 50) + "..." });
 
     // Validate required fields
     if (!lectureId) {
@@ -92,22 +128,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the reflection
-    const reflection = await prisma.reflection.create({
-      data: {
-        userId: session.user.id,
-        lectureId,
-        promptType,
-        content,
-        status: 'SUBMITTED', // Default status
-      },
-    });
+    // Create the reflection with a direct relationship
+    try {
+      console.log("Creating reflection with userId:", userId);
 
-    return NextResponse.json(reflection, { status: 201 });
+      // Method 1: Using userId directly
+      /*
+      const reflection = await prisma.reflection.create({
+        data: {
+          userId,
+          lectureId,
+          promptType,
+          content,
+          status: 'SUBMITTED',
+        },
+      });
+      */
+
+      // Method 2: Using direct relationship
+      const reflection = await prisma.reflection.create({
+        data: {
+          user: {
+            connect: { id: userId }
+          },
+          lecture: {
+            connect: { id: lectureId }
+          },
+          promptType,
+          content,
+          status: 'SUBMITTED',
+        },
+      });
+
+      console.log("Reflection created successfully:", reflection.id);
+      return NextResponse.json(reflection, { status: 201 });
+    } catch (prismaError) {
+      console.error('Prisma error creating reflection:', prismaError);
+      return NextResponse.json(
+        {
+          error: 'Failed to create reflection',
+          details: JSON.stringify(prismaError, null, 2)
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Error in POST /api/reflections:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      {
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     );
   }

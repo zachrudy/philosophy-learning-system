@@ -1,90 +1,58 @@
 // src/lib/services/reflectionService.ts
 
-/**
- * Represents a reflection submission
- */
-export interface ReflectionSubmission {
+import { PROMPT_TYPES } from '@/lib/constants';
+
+// Interface for reflection submission
+interface ReflectionSubmission {
   lectureId: string;
   promptType: string;
   content: string;
 }
 
-/**
- * Represents AI evaluation data structure
- */
-export interface AIEvaluationData {
-  score: number;
-  feedback: string;
-  areas: {
-    strength: string[];
-    improvement: string[];
-  };
-  conceptualUnderstanding: number;
-  criticalThinking: number;
-}
-
-/**
- * Represents a reflection with evaluation data
- */
-export interface Reflection {
-  id: string;
-  userId: string;
-  lectureId: string;
-  promptType: string;
-  content: string;
-  status: string;
-  score?: number;
-  createdAt: string;
-  updatedAt: string;
-  parsedEvaluation?: AIEvaluationData | null;
-}
-
-/**
- * API response with pagination information
- */
-interface PaginatedResponse<T> {
-  data: T[];
-  metadata: {
-    pagination: {
-      page: number;
-      limit: number;
-      total: number;
-      totalPages: number;
-    };
-  };
-}
-
-/**
- * Filter options for retrieving reflections
- */
-export interface ReflectionFilterOptions {
-  promptType?: string;
-  status?: string;
-  sortBy?: 'createdAt' | 'updatedAt' | 'score';
-  sortOrder?: 'asc' | 'desc';
-  page?: number;
-  limit?: number;
-}
-
-/**
- * Service for managing reflections
- */
+// Service for handling reflections
 export const reflectionService = {
   /**
-   * Submit a new reflection
+   * Submit a reflection
+   * @param lectureId - The ID of the lecture
+   * @param promptType - The type of reflection prompt
+   * @param content - The reflection content
+   * @returns Promise with success/error info
    */
-  async submitReflection(data: ReflectionSubmission): Promise<{
-    success: boolean;
-    data?: any;
-    error?: string;
-  }> {
+  submitReflection: async (lectureId: string, promptType: string, content: string) => {
     try {
+      // Validate inputs
+      if (!lectureId) {
+        return { success: false, error: 'Lecture ID is required' };
+      }
+
+      if (!promptType) {
+        return { success: false, error: 'Prompt type is required' };
+      }
+
+      if (!content || content.trim() === '') {
+        return { success: false, error: 'Content is required' };
+      }
+
+      // Validate prompt type
+      const validPromptTypes = Object.values(PROMPT_TYPES);
+      if (!validPromptTypes.includes(promptType)) {
+        return {
+          success: false,
+          error: `Invalid prompt type. Must be one of: ${validPromptTypes.join(', ')}`
+        };
+      }
+
+      // Submit the reflection via API
       const response = await fetch('/api/reflections', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          lectureId,
+          promptType,
+          content
+        }),
       });
 
       if (!response.ok) {
@@ -92,35 +60,29 @@ export const reflectionService = {
         throw new Error(errorData.error || 'Failed to submit reflection');
       }
 
-      return {
-        success: true,
-        data: await response.json(),
-      };
+      const data = await response.json();
+      return { success: true, data };
     } catch (error) {
       console.error('Error submitting reflection:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
       };
     }
   },
 
   /**
-   * Get reflections for a specific lecture and user
+   * Get reflections for a lecture
+   * @param lectureId - The lecture ID
+   * @param userId - Optional user ID filter
+   * @param promptType - Optional prompt type filter
+   * @returns Promise with reflections data
    */
-  async getLectureReflections(
-    lectureId: string,
-    userId?: string,
-    promptType?: string
-  ): Promise<{
-    success: boolean;
-    data?: Reflection[];
-    error?: string;
-  }> {
+  getLectureReflections: async (lectureId: string, userId?: string, promptType?: string) => {
     try {
       let url = `/api/lectures/${lectureId}/reflections`;
 
-      // Add query parameters if provided
+      // Add query params if provided
       const params = new URLSearchParams();
       if (userId) params.append('userId', userId);
       if (promptType) params.append('promptType', promptType);
@@ -129,338 +91,31 @@ export const reflectionService = {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await fetch(url);
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch reflections: ${response.status}`);
+        throw new Error(errorData.error || 'Failed to fetch reflections');
       }
 
       const data = await response.json();
-
-      return {
-        success: true,
-        data: data.data, // API returns { data: reflectionsData }
-      };
+      return { success: true, data: data.data || [] };
     } catch (error) {
       console.error('Error fetching reflections:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        data: []
       };
     }
   },
 
   /**
-   * Get all reflections for a user with filtering options
+   * Get a display label for a prompt type
+   * @param promptType - The prompt type
+   * @returns The display label
    */
-  async getUserReflections(
-    userId: string,
-    options: ReflectionFilterOptions = {}
-  ): Promise<{
-    success: boolean;
-    data?: PaginatedResponse<Reflection>;
-    error?: string;
-  }> {
-    try {
-      const {
-        promptType,
-        status,
-        sortBy = 'createdAt',
-        sortOrder = 'desc',
-        page = 1,
-        limit = 10,
-      } = options;
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      if (promptType) params.append('promptType', promptType);
-      if (status) params.append('status', status);
-      params.append('sortBy', sortBy);
-      params.append('sortOrder', sortOrder);
-      params.append('page', page.toString());
-      params.append('limit', limit.toString());
-
-      const url = `/api/users/${userId}/reflections?${params.toString()}`;
-
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch user reflections: ${response.status}`);
-      }
-
-      return {
-        success: true,
-        data: await response.json(),
-      };
-    } catch (error) {
-      console.error('Error fetching user reflections:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Get a specific reflection by ID
-   */
-  async getReflectionById(reflectionId: string): Promise<{
-    success: boolean;
-    data?: Reflection;
-    error?: string;
-  }> {
-    try {
-      const response = await fetch(`/api/reflections/${reflectionId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch reflection: ${response.status}`);
-      }
-
-      return {
-        success: true,
-        data: await response.json(),
-      };
-    } catch (error) {
-      console.error('Error fetching reflection:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Update a reflection with AI evaluation results
-   */
-  async submitAIEvaluation(
-    reflectionId: string,
-    evaluationData: AIEvaluationData
-  ): Promise<{
-    success: boolean;
-    data?: Reflection;
-    error?: string;
-  }> {
-    try {
-      const response = await fetch(`/api/reflections/${reflectionId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          aiEvaluation: evaluationData,
-          status: 'EVALUATED',
-          score: evaluationData.score,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to submit evaluation: ${response.status}`);
-      }
-
-      return {
-        success: true,
-        data: await response.json(),
-      };
-    } catch (error) {
-      console.error('Error submitting evaluation:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Update a reflection's content
-   */
-  async updateReflectionContent(
-    reflectionId: string,
-    content: string
-  ): Promise<{
-    success: boolean;
-    data?: Reflection;
-    error?: string;
-  }> {
-    try {
-      const response = await fetch(`/api/reflections/${reflectionId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to update reflection: ${response.status}`);
-      }
-
-      return {
-        success: true,
-        data: await response.json(),
-      };
-    } catch (error) {
-      console.error('Error updating reflection:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Get reflection statistics for a user
-   */
-  async getUserReflectionStats(userId: string): Promise<{
-    success: boolean;
-    data?: {
-      total: number;
-      byPromptType: Record<string, number>;
-      byStatus: Record<string, number>;
-      averageScore?: number;
-      masteryRate?: number;
-    };
-    error?: string;
-  }> {
-    try {
-      const response = await fetch(`/api/users/${userId}/reflections/stats`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch reflection stats: ${response.status}`);
-      }
-
-      return {
-        success: true,
-        data: await response.json(),
-      };
-    } catch (error) {
-      console.error('Error fetching reflection stats:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Get reflection statistics for a lecture
-   */
-  async getLectureReflectionStats(lectureId: string): Promise<{
-    success: boolean;
-    data?: {
-      total: number;
-      byPromptType: Record<string, number>;
-      byStatus: Record<string, number>;
-      averageScore?: number;
-      masteryRate?: number;
-    };
-    error?: string;
-  }> {
-    try {
-      const response = await fetch(`/api/lectures/${lectureId}/reflections/stats`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch lecture reflection stats: ${response.status}`);
-      }
-
-      return {
-        success: true,
-        data: await response.json(),
-      };
-    } catch (error) {
-      console.error('Error fetching lecture reflection stats:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Export reflections to Markdown
-   * Opens a new tab with the exported Markdown
-   */
-  async exportReflectionsToMarkdown(
-    options: {
-      userId?: string;
-      lectureId?: string;
-    }
-  ): Promise<{
-    success: boolean;
-    error?: string;
-  }> {
-    try {
-      const { userId, lectureId } = options;
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      if (userId) params.append('userId', userId);
-      if (lectureId) params.append('lectureId', lectureId);
-
-      // Open the export endpoint in a new tab to download the file
-      window.open(`/api/reflections/export?${params.toString()}`, '_blank');
-
-      return { success: true };
-    } catch (error) {
-      console.error('Error exporting reflections:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
-    }
-  },
-
-  /**
-   * Get a word count for text
-   */
-  getWordCount(text: string): number {
-    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
-  },
-
-  /**
-   * Check if a reflection meets minimum word count
-   */
-  meetsMinimumWordCount(text: string, minimumWords: number): boolean {
-    return this.getWordCount(text) >= minimumWords;
-  },
-
-  /**
-   * Get appropriate prompt label from prompt type
-   */
-  getPromptLabel(promptType: string): string {
+  getPromptLabel: (promptType: string): string => {
     switch (promptType) {
       case 'pre-lecture':
         return 'Pre-Lecture Reflection';
@@ -471,19 +126,27 @@ export const reflectionService = {
       case 'discussion':
         return 'Discussion';
       default:
-        return 'Reflection';
+        return promptType.charAt(0).toUpperCase() + promptType.slice(1);
     }
   },
 
   /**
-   * Format reflection for display (truncate if needed)
+   * Format reflection content for display, truncating if needed
+   * @param content - The reflection content
+   * @param maxLength - Maximum length before truncation
+   * @returns Formatted content
    */
-  formatReflectionForDisplay(content: string, maxLength = 200): string {
-    if (content.length <= maxLength) {
-      return content;
+  formatReflectionForDisplay: (content: string, maxLength = 100): string => {
+    if (!content) return '';
+
+    // Truncate if longer than maxLength
+    if (content.length > maxLength) {
+      return content.substring(0, maxLength) + '...';
     }
-    return content.substring(0, maxLength) + '...';
+
+    return content;
   }
 };
 
+// Allow for default import
 export default reflectionService;
