@@ -56,6 +56,15 @@ export default function WorkflowStageManager({
   const [error, setError] = useState<string | null>(null);
   const [nextLecture, setNextLecture] = useState<any>(null);
 
+  // Add local state to track current status
+  const [currentStatus, setCurrentStatus] = useState(progress.status);
+
+  // Log the initial status when component mounts
+  useEffect(() => {
+    console.log("WorkflowStageManager mounted with status:", progress.status);
+    setCurrentStatus(progress.status);
+  }, [progress.status]);
+
   // Fetch prerequisite status if not provided
   useEffect(() => {
     if (!initialPrerequisiteStatus) {
@@ -84,7 +93,20 @@ export default function WorkflowStageManager({
   }, [initialPrerequisiteStatus, userId, lecture.id]);
 
   // Handle workflow stage transitions
-  const handleProgressUpdate = (updatedProgress: any) => {
+  const handleProgressUpdate = (newStatus: string) => {
+    console.log("handleProgressUpdate called with status:", newStatus);
+    console.log("Current status before update:", currentStatus);
+
+    // Update local state first
+    setCurrentStatus(newStatus);
+
+    // Then notify parent
+    const updatedProgress = {
+      ...progress,
+      status: newStatus
+    };
+
+    console.log("Notifying parent with updated progress:", updatedProgress);
     onProgressUpdate(updatedProgress);
   };
 
@@ -92,10 +114,15 @@ export default function WorkflowStageManager({
     return <LoadingState />;
   }
 
+  // Determine which component to render based on current status (using local state)
+  // Log which stage we're about to render
+  console.log("Rendering workflow stage for status:", currentStatus);
+
   // Determine which component to render based on current progress status
   const renderWorkflowStage = () => {
     // Check if prerequisites are satisfied
-    if (!prerequisiteStatus.satisfied && progress.status === PROGRESS_STATUS.LOCKED) {
+    if (!prerequisiteStatus.satisfied && currentStatus === PROGRESS_STATUS.LOCKED) {
+      console.log("Rendering PrerequisiteCheck component");
       return (
         <PrerequisiteCheck
           prerequisites={prerequisiteStatus}
@@ -105,19 +132,18 @@ export default function WorkflowStageManager({
     }
 
     // Render based on current progress status
-    switch (progress.status) {
+    switch (currentStatus) {
       case PROGRESS_STATUS.LOCKED:
         // If we get here, prerequisites are satisfied but status is still LOCKED
         // Update to READY automatically
+        console.log("Status is LOCKED but prerequisites satisfied, updating to READY");
         setTimeout(() => {
-          handleProgressUpdate({
-            ...progress,
-            status: PROGRESS_STATUS.READY
-          });
+          handleProgressUpdate(PROGRESS_STATUS.READY);
         }, 0);
         return <LoadingState count={1} />;
 
       case PROGRESS_STATUS.READY:
+        console.log("Rendering PreLectureStage component");
         return (
           <PreLectureStage
             lecture={lecture}
@@ -127,6 +153,7 @@ export default function WorkflowStageManager({
         );
 
       case PROGRESS_STATUS.STARTED:
+        console.log("Rendering ViewingStage component");
         return (
           <ViewingStage
             lecture={lecture}
@@ -135,6 +162,7 @@ export default function WorkflowStageManager({
         );
 
       case PROGRESS_STATUS.WATCHED:
+        console.log("Rendering InitialReflectionStage component");
         return (
           <InitialReflectionStage
             lecture={lecture}
@@ -144,6 +172,7 @@ export default function WorkflowStageManager({
         );
 
       case PROGRESS_STATUS.INITIAL_REFLECTION:
+        console.log("Rendering MasteryTestingStage component");
         return (
           <MasteryTestingStage
             lecture={lecture}
@@ -153,6 +182,7 @@ export default function WorkflowStageManager({
         );
 
       case PROGRESS_STATUS.MASTERY_TESTING:
+        console.log("Rendering MasteryTestingStage component");
         return (
           <MasteryTestingStage
             lecture={lecture}
@@ -162,6 +192,7 @@ export default function WorkflowStageManager({
         );
 
       case PROGRESS_STATUS.MASTERED:
+        console.log("Rendering MasteredStage component");
         return (
           <MasteredStage
             lecture={lecture}
@@ -172,11 +203,9 @@ export default function WorkflowStageManager({
 
       default:
         // If we don't recognize the status, default to READY
+        console.log("Unrecognized status, defaulting to READY");
         setTimeout(() => {
-          handleProgressUpdate({
-            ...progress,
-            status: PROGRESS_STATUS.READY
-          });
+          handleProgressUpdate(PROGRESS_STATUS.READY);
         }, 0);
         return <LoadingState count={1} />;
     }

@@ -33,6 +33,10 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
       setIsSubmitting(true);
       setError(null);
 
+      console.log("Submitting pre-lecture reflection...");
+      console.log("Lecture ID:", lecture.id);
+      console.log("User ID:", userId);
+
       // Submit the reflection using the updated service method
       const reflectionResult = await reflectionService.submitReflection(
         lecture.id,
@@ -40,22 +44,31 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
         content
       );
 
+      console.log("Reflection submission result:", reflectionResult);
+
       if (!reflectionResult.success) {
         throw new Error(reflectionResult.error || 'Failed to submit reflection');
       }
 
       // Update the progress status to STARTED
+      console.log("Updating progress status to STARTED...");
       const progressResult = await updateProgressStatus(userId, lecture.id, PROGRESS_STATUS.STARTED);
+
+      console.log("Progress update result:", progressResult);
 
       if (!progressResult.success) {
         throw new Error(progressResult.error || 'Failed to update progress');
       }
 
       // Update UI state
+      console.log("Setting hasSubmitted to true");
       setHasSubmitted(true);
 
-      // Notify parent component of the status change
-      onProgressUpdate(PROGRESS_STATUS.STARTED);
+      // Wait a moment before notifying parent component of the status change
+      setTimeout(() => {
+        console.log("Calling onProgressUpdate with STARTED status");
+        onProgressUpdate(PROGRESS_STATUS.STARTED);
+      }, 500);
     } catch (err) {
       console.error('Error submitting pre-lecture reflection:', err);
       setError('Failed to submit reflection. Please try again.');
@@ -64,7 +77,11 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
     }
   };
 
+  // Add debug rendering to check if hasSubmitted is true
+  console.log("Current state - hasSubmitted:", hasSubmitted);
+
   if (hasSubmitted) {
+    console.log("Rendering success message");
     return (
       <div className="bg-green-50 rounded-lg p-6 text-center my-6">
         <div className="mb-4">
@@ -75,7 +92,10 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
         <h3 className="text-lg font-medium text-green-800 mb-2">Pre-Lecture Reflection Submitted</h3>
         <p className="text-green-600 mb-4">Your reflection has been submitted successfully.</p>
         <button
-          onClick={() => onProgressUpdate(PROGRESS_STATUS.STARTED)}
+          onClick={() => {
+            console.log("Continue button clicked");
+            onProgressUpdate(PROGRESS_STATUS.STARTED);
+          }}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
           Continue to Lecture
@@ -84,6 +104,7 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
     );
   }
 
+  console.log("Rendering form");
   return (
     <div className="p-6">
       <h2 className="text-lg font-medium text-gray-900 mb-4">Pre-Lecture Reflection</h2>
@@ -107,7 +128,10 @@ const PreLectureStage: React.FC<PreLectureStageProps> = ({
         lectureId={lecture.id}
         promptType="pre-lecture"
         minimumWords={30}
-        onSubmitSuccess={(content) => handleReflectionSubmit(content)}
+        onSubmitSuccess={(content) => {
+          console.log("ReflectionForm onSubmitSuccess called");
+          handleReflectionSubmit(content);
+        }}
         className="mt-4"
       />
 
