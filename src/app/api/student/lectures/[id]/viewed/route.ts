@@ -22,15 +22,22 @@ export async function POST(
       );
     }
 
-    // Directly use session.user.id instead of looking up by email
-    const userId = session.user.id;
+    // Get the lecture ID from params
+    const { id: lectureId } = params;
+    if (!lectureId) {
+      return NextResponse.json(
+        { error: 'Lecture ID is required' },
+        { status: 400 }
+      );
+    }
 
-    // Log the userId to confirm we're getting it correctly
-    console.log('Using userId from session:', userId);
+    // Get the user ID - either from session or by looking up the email
+    let userId = session.user.id;
+    console.log('User ID from session:', userId);
 
-    // If for some reason userId is not in the session, fall back to looking up by email
+    // If userId is not in session, look it up by email
     if (!userId && session.user.email) {
-      console.log('userId not found in session, falling back to email lookup');
+      console.log('userId not found in session, looking up by email:', session.user.email);
 
       const user = await prisma.user.findUnique({
         where: { email: session.user.email },
@@ -44,80 +51,74 @@ export async function POST(
         );
       }
 
-      // Use the userId from the database lookup
-      const userIdFromEmail = user.id;
-      console.log('Retrieved userId via email lookup:', userIdFromEmail);
+      userId = user.id;
+      console.log('Found user ID via email lookup:', userId);
+    }
 
-      // Continue with the userIdFromEmail
-      const { id: lectureId } = params;
-      // ... rest of the function using userIdFromEmail
-    } else {
-      // Continue with userId from session
-      const { id: lectureId } = params;
+    // If we still don't have a userId, return an error
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unable to determine user ID' },
+        { status: 400 }
+      );
+    }
 
-      console.log('Marking lecture as viewed:', { userId, lectureId });
+    console.log('Marking lecture as viewed:', { userId, lectureId });
 
-      if (!lectureId) {
-        return NextResponse.json(
-          { error: 'Lecture ID is required' },
-          { status: 400 }
-        );
-      }
+    // Check if lecture exists
+    const lecture = await prisma.lecture.findUnique({
+      where: { id: lectureId },
+    });
 
-      // Check if lecture exists
-      const lecture = await prisma.lecture.findUnique({
-        where: { id: lectureId },
-      });
+    if (!lecture) {
+      return NextResponse.json(
+        { error: 'Lecture not found' },
+        { status: 404 }
+      );
+    }
 
-      if (!lecture) {
-        return NextResponse.json(
-          { error: 'Lecture not found' },
-          { status: 404 }
-        );
-      }
+    console.log('Lecture found:', lecture.title);
 
-      console.log('Lecture found:', lecture.title);
+    // Check if progress record exists
+    let progress = await prisma.progress.findFirst({
+      where: {
+        userId,
+        lectureId
+      },
+    });
 
-      // Check if progress record exists
-      let progress = await prisma.progress.findFirst({
-        where: {
+    console.log('Existing progress:', progress);
+
+    if (!progress) {
+      // Create a new progress record
+      console.log('Creating new progress record');
+      progress = await prisma.progress.create({
+        data: {
           userId,
-          lectureId
+          lectureId,
+          status: PROGRESS_STATUS.WATCHED,
+          lastViewed: new Date()
         },
       });
-
-      console.log('Existing progress:', progress);
-
-      if (!progress) {
-        // Create a new progress record
-        console.log('Creating new progress record');
-        progress = await prisma.progress.create({
-          data: {
-            userId,
-            lectureId,
-            status: PROGRESS_STATUS.WATCHED,
-            lastViewed: new Date()
-          },
-        });
-      } else {
-        // Update existing progress
-        console.log('Updating existing progress to WATCHED');
-        progress = await prisma.progress.update({
-          where: { id: progress.id },
-          data: {
-            status: PROGRESS_STATUS.WATCHED,
-            lastViewed: new Date()
-          },
-        });
-      }
-
-      console.log('Final progress state:', progress);
-
-      return NextResponse.json({
-        message: 'Lecture marked as viewed',
-        data: progress
+    } else {
+      // Update existing progress
+      console.log('Updating existing progress to WATCHED');
+      progress = await prisma.progress.update({
+        where: { id: progress.id },
+        data: {
+          status: PROGRESS_STATUS.WATCHED,
+          lastViewed: new Date()
+        },
       });
     }
+
+    console.log('Final progress state:', progress);
+
+    return NextResponse.json({
+      message: 'Lecture marked as viewed',
+      data: progress
+    });
+
   } catch (error) {
     console.error('Error in POST /api/student/lectures/[id]/viewed:', error);
     return NextResponse.json(
